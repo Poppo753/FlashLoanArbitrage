@@ -1,4 +1,4 @@
-import { ethers, Wallet } from "ethers";
+import { ethers, Wallet, JsonRpcProvider } from "ethers";
 import { logger } from "../logger";
 
 export interface Validity {
@@ -14,7 +14,7 @@ export interface Transaction {
   gasPrice?: bigint;
   maxFeePerGas?: bigint;
   maxPriorityFeePerGas?: bigint;
-  nonce: number;
+  nonce?: number;
   chainId: number;
   type: number;
 }
@@ -25,6 +25,7 @@ export interface FlashbotsBundlePayload {
   validity: Validity;
   timestamp: number;
   blockNumber: number;
+  rejected?: string;
 }
 
 export interface SignedBundle {
@@ -51,8 +52,46 @@ export class BundleBuilder {
   private coinbaseTransfer: bigint = BigInt(0);
   private validityWindow: Validity = { startBlock: 0, endBlock: 0 };
   private transactions: Transaction[] = [];
+  private provider: JsonRpcProvider | null = null;
 
   constructor() {}
+
+  setProvider(provider: JsonRpcProvider): void {
+    this.provider = provider;
+  }
+
+  private getSignerWallet(): Wallet {
+    const privateKey = process.env.BOT_PRIVATE_KEY;
+    if (!privateKey || !/^0x[0-9a-fA-F]{64}$/.test(privateKey)) {
+      throw new Error(
+        "BOT_PRIVATE_KEY is missing or malformed; refusing to sign bundle transactions with an unconfigured key"
+      );
+    }
+    return new Wallet(privateKey);
+  }
+
+  private async resolveNonce(
+    address: string,
+    providedNonce: number | undefined,
+    offset: number
+  ): Promise<number> {
+    if (this.provider) {
+      return (await this.provider.getTransactionCount(address, "pending")) + offset;
+    }
+    if (
+      typeof providedNonce === "number" &&
+      Number.isInteger(providedNonce) &&
+      providedNonce >= 0
+    ) {
+      logger.warn("BundleBuilder has no provider; using caller-supplied nonce", {
+        nonce: providedNonce,
+      });
+      return providedNonce;
+    }
+    throw new Error(
+      "Cannot resolve transaction nonce: no provider configured and tx.nonce is not a valid non-negative integer"
+    );
+  }
 
   async buildBundle(
     transactions: Transaction[],
@@ -65,7 +104,7 @@ export class BundleBuilder {
       this.validityWindow = validity;
 
       const signedTxs = await Promise.all(
-        transactions.map((tx) => this.signTransaction(tx))
+        transactions.map((tx, index) => this.signTransaction(tx, index))
       );
 
       const bundle: FlashbotsBundlePayload = {
@@ -179,14 +218,15 @@ export class BundleBuilder {
     return ethers.getBytes(data);
   }
 
-  async signTransaction(tx: Transaction): Promise<string> {
-    const wallet = Wallet.createRandom();
+  async signTransaction(tx: Transaction, nonceOffset: number = 0): Promise<string> {
+    const wallet = this.getSignerWallet();
+    const nonce = await this.resolveNonce(wallet.address, tx.nonce, nonceOffset);
     const txRequest = {
       to: tx.to,
       data: tx.data,
       value: tx.value,
       gasLimit: tx.gasLimit,
-      nonce: tx.nonce,
+      nonce,
       type: tx.type,
       chainId: tx.chainId,
       maxFeePerGas: tx.maxFeePerGas,

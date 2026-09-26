@@ -246,24 +246,49 @@ export class MEVMonitor {
 
       this.biddingStrategy.setConfidenceFactor(0.95);
 
+      if (this.provider) {
+        bundleBuilder.setProvider(this.provider);
+      }
+
+      const validity = { startBlock: targetBlock, endBlock: targetBlock + 2 };
+      const backrunData = this.buildBackrunCalldata(targetTx, arbAmount, []);
+      const backrunTarget = process.env.BACKRUN_CONTRACT_ADDRESS || "";
+
+      const missing: string[] = [];
+      if (!backrunData || backrunData === "0x" || backrunData.length < 10) {
+        missing.push("backrun calldata (buildBackrunCalldata is not implemented)");
+      }
+      if (!ethers.isAddress(backrunTarget)) {
+        missing.push("backrun target contract address (BACKRUN_CONTRACT_ADDRESS not set)");
+      }
+
+      if (missing.length > 0) {
+        const rejected = `Backrun bundle rejected before submission: ${missing.join("; ")}`;
+        logger.warn("Backrun bundle rejected", {
+          targetTxHash: targetTx.hash,
+          rejected,
+        });
+        return {
+          txs: [],
+          validity,
+          timestamp: Date.now(),
+          blockNumber: targetBlock,
+          rejected,
+        };
+      }
+
       const backrunTx: import("./bundleBuilder").Transaction = {
-        to: targetTx.to,
-        data: targetTx.data,
-        value: targetTx.value,
-        gasLimit: BigInt(3000000),
-        gasPrice: targetTx.gasPrice,
+        to: ethers.getAddress(backrunTarget),
+        data: backrunData,
+        value: BigInt(0),
+        gasLimit: BigInt(config.gasLimit),
         maxFeePerGas: BigInt(30) * BigInt(10) ** BigInt(9),
         maxPriorityFeePerGas: BigInt(2) * BigInt(10) ** BigInt(9),
-        nonce: 0,
         chainId: config.chains[0].chainId,
         type: 2,
       };
 
-      const bundle = bundleBuilder.buildBundle(
-        [backrunTx],
-        BigInt(0),
-        { startBlock: targetBlock, endBlock: targetBlock + 2 }
-      );
+      const bundle = await bundleBuilder.buildBundle([backrunTx], BigInt(0), validity);
 
       logger.info("Backrun bundle built successfully", {
         targetTxHash: targetTx.hash,

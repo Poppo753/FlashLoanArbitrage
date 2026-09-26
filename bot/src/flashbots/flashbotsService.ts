@@ -53,6 +53,16 @@ export class FlashbotsService {
     signature: string
   ): Promise<BundleSubmissionResult> {
     try {
+      if (bundle.rejected) {
+        logger.warn("Refusing to submit rejected bundle", {
+          reason: bundle.rejected,
+        });
+        return {
+          success: false,
+          error: bundle.rejected,
+        };
+      }
+
       const payload = {
         jsonrpc: "2.0",
         id: Date.now(),
