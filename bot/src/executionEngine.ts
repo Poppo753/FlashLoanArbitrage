@@ -177,7 +177,6 @@ export class ExecutionEngine {
     reserves: Map<string, any>
   ): Promise<ExecutionResult> {
     const timestamp = Date.now();
-    void loanSize;
     void path;
     void reserves;
 
@@ -193,21 +192,46 @@ export class ExecutionEngine {
         };
       }
 
+      let balanceBefore: bigint | null = null;
+      try {
+        balanceBefore = await this.provider!.getBalance(this.wallet!.address, "pending");
+      } catch (err: unknown) {
+        logger.warn("Could not read pre-execution balance; profit will be unknown", {
+          error: String(err),
+        });
+      }
+
       const targetBlock = (await this.provider!.getBlock("latest"))!.number + 1;
       const txHash = await this.submitToFlashbots(tx, targetBlock);
 
       const receipt = await this.provider!.waitForTransaction(txHash, 1, 30000);
 
       if (receipt && receipt.status === 1) {
-        const gasCost = receipt.gasUsed * BigInt(tx.maxFeePerGas as bigint || 0);
+        let balanceAfter: bigint | null = null;
+        try {
+          balanceAfter = await this.provider!.getBalance(this.wallet!.address, receipt.blockNumber);
+        } catch (err: unknown) {
+          logger.warn("Could not read post-execution balance; profit will be unknown", {
+            error: String(err),
+          });
+        }
+
+        const profitMeasured = balanceBefore !== null && balanceAfter !== null;
+        const netProfitWei = profitMeasured ? balanceAfter! - balanceBefore! : BigInt(0);
+        const effectiveGasPrice: bigint =
+          receipt.gasPrice || BigInt(tx.maxFeePerGas ?? 0);
+        const gasCost = receipt.gasUsed * effectiveGasPrice;
+        const flashLoanFeeWei = (loanSize * BigInt(config.flashLoanPremiumBps)) / BigInt(10000);
+        const grossProfitWei = netProfitWei + gasCost + flashLoanFeeWei;
         const profitResult: ProfitResult = {
-          grossProfitWei: BigInt(0),
-          flashLoanFeeWei: BigInt(0),
+          grossProfitWei,
+          flashLoanFeeWei,
           gasCostWei: gasCost,
-          netProfitWei: BigInt(0),
+          netProfitWei,
           netProfitUsd: 0,
-          profitMargin: 0,
-          isProfitable: true,
+          profitMargin:
+            grossProfitWei > BigInt(0) ? Number(netProfitWei) / Number(grossProfitWei) : 0,
+          isProfitable: profitMeasured && netProfitWei > BigInt(0),
           estimatedPriceImpact: 0,
           effectiveAmountOut: BigInt(0),
         };
@@ -216,6 +240,9 @@ export class ExecutionEngine {
           txHash,
           blockNumber: receipt.blockNumber,
           gasUsed: receipt.gasUsed.toString(),
+          profitMeasured,
+          netProfitWei: netProfitWei.toString(),
+          isProfitable: profitResult.isProfitable,
         });
 
         return {
