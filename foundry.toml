@@ -4,7 +4,7 @@ test = "test"
 script = "script"
 out = "out"
 libs = ["lib"]
-solc_version = "0.8.20"
+solc_version = "0.8.27"
 optimizer = true
 optimizer_runs = 200
 evm_version = "paris"
@@ -15,3 +15,10 @@ remappings = [
 ]
 fuzz = { runs = 10000 }
 invariant = { runs = 1000, depth = 15 }
+
+[rpc_endpoints]
+arbitrum = "${ARBITRUM_RPC_URL}"
+
+# Fork tests need a pinned block for determinism:
+#   FORK_ENABLED=true forge test --match-path "test/fork/*" --fork-url arbitrum --fork-block-number <PIN>
+# See Docs/ARBITRAGE_CHECKLIST.md (T6.1) and Docs/IMPLEMENTATION_REPORT.md for the block used.
