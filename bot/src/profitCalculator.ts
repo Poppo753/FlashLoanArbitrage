@@ -25,10 +25,10 @@ export function setBaseFeeWei(baseFeeWei: bigint): void {
 }
 
 export class ProfitCalculator {
-  private readonly aavePremiumBps: number;
+  private readonly flashLoanPremiumBps: number;
 
-  constructor(aavePremiumBps?: number) {
-    this.aavePremiumBps = aavePremiumBps ?? config.flashLoanPremiumBps;
+  constructor(flashLoanPremiumBps?: number) {
+    this.flashLoanPremiumBps = flashLoanPremiumBps ?? config.flashLoanPremiumBps;
   }
 
   calculate(
@@ -38,7 +38,7 @@ export class ProfitCalculator {
     tokenPrices?: Record<string, number>
   ): ProfitResult {
     const amountIn = loanSizeWei;
-    const aaveFee = this.calculateAaveFee(amountIn);
+    const flashLoanFee = this.calculateFlashLoanFee(amountIn);
 
     let currentAmount = amountIn;
     let priceImpactTotal = 0;
@@ -76,7 +76,7 @@ export class ProfitCalculator {
       });
     }
     const grossProfit = currentAmount - amountIn;
-    const netProfit = grossProfit - aaveFee - gasCost;
+    const netProfit = grossProfit - flashLoanFee - gasCost;
 
     const tokenPricesMap = tokenPrices ?? {};
     const netProfitUsd = this.weiToUsd(netProfit, tokenPricesMap);
@@ -84,7 +84,7 @@ export class ProfitCalculator {
 
     const result: ProfitResult = {
       grossProfitWei: grossProfit,
-      flashLoanFeeWei: aaveFee,
+      flashLoanFeeWei: flashLoanFee,
       gasCostWei: gasCost,
       netProfitWei: netProfit,
       netProfitUsd,
@@ -106,8 +106,9 @@ export class ProfitCalculator {
     return result;
   }
 
-  private calculateAaveFee(amountIn: bigint): bigint {
-    const premiumBps = BigInt(this.aavePremiumBps);
+  /** Flash loan premium in bps. Balancer V2 charges 0, so this is normally zero. */
+  private calculateFlashLoanFee(amountIn: bigint): bigint {
+    const premiumBps = BigInt(this.flashLoanPremiumBps);
     return (amountIn * premiumBps) / BigInt(10000);
   }
 

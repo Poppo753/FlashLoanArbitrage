@@ -76,14 +76,16 @@ const UNISWAP_V2_FACTORY_ABI = [
   "function getPair(address tokenA, address tokenB) view returns (address pair)",
 ];
 
+/**
+ * Fallback detection universe, used only when MONITOR_TOKENS is unset/empty.
+ * Keyed by chainId; only the active chain (Arbitrum One) has an entry. WETH is
+ * always prepended by `tokensToMonitor`, so listing it here is de-duplicated.
+ * Arbitrum One: native USDC (6 decimals) is the base token of the cycle.
+ */
 const KNOWN_TOKENS_BY_CHAIN: Record<number, string[]> = {
-  1: [
-    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    "0xdAC17F958D2ee523a2206206994597C13D831ec7",
-    "0x6B175474E89094C44Da98b954EedeAC495271d0F",
-    "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
-    "0x514910771AF9Ca656af840dff83E8264EcF986CA",
-    "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+  42161: [
+    "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", // WETH (18 decimals, quote token)
+    "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", // USDC (6 decimals, base token)
   ],
 };
 

@@ -300,7 +300,7 @@ export class OpportunityDetector {
   ): bigint {
     let amountIn = loanSize;
     const feeBps = BigInt(config.flashLoanPremiumBps);
-    const aaveFee = (amountIn * feeBps) / BigInt(10000);
+    const flashLoanFee = (amountIn * feeBps) / BigInt(10000);
 
     for (let i = 0; i < path.tokens.length - 1; i++) {
       const tokenIn = path.tokens[i];
@@ -314,7 +314,7 @@ export class OpportunityDetector {
       amountIn = this.getAmountOut(amountIn, reserve.reserveIn, reserve.reserveOut);
     }
 
-    const profit = amountIn - loanSize - aaveFee;
+    const profit = amountIn - loanSize - flashLoanFee;
     return profit > BigInt(0) ? profit : BigInt(0);
   }
 

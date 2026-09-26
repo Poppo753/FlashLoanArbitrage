@@ -56,8 +56,8 @@ async function initializeBot(): Promise<void> {
 async function startMonitoring(): Promise<void> {
   try {
     // Detection universe comes from MONITOR_TOKENS (falls back to a built-in
-    // mainnet list) so every monitored pair is scanned, all on the primary
-    // chain - execution is chain[0]-only by design.
+    // Arbitrum One list) so every monitored pair is scanned, all on the active
+    // chain (Arbitrum One) - execution is chain[0]-only by design.
     const tokens = poolMonitor.tokensToMonitor(config.chains[0]);
     const opportunities = await opportunityDetector.detectAllOpportunities(tokens);
 
@@ -98,12 +98,12 @@ async function startMonitoring(): Promise<void> {
           });
 
           const loanAsset = opp.tokens[0];
-          // TODO(B6): encode real calldata against the deployed FlashArbExecutor
-          // (executeOperation(assets, amounts, premiums, initiator, params)) and
-          // put its address in config before mainnet use. assets/amounts must
-          // stay the same length; this is a single-asset flash loan placeholder.
+          // TODO(B6): encode real calldata against the deployed ArbitragePlugin
+          // (startArbitrage(uint256 amount, bool buyOnVenueA)) and put its
+          // address in config before Arbitrum mainnet use. The single-asset flash loan
+          // shape below is a Balancer-Vault placeholder, not the real cycle.
           const simResult = await simulator.simulateFlashLoan(
-            config.chains[0].aaveLendingPool,
+            config.chains[0].balancerVault,
             [loanAsset],
             [loanSize],
             undefined,
@@ -113,8 +113,8 @@ async function startMonitoring(): Promise<void> {
 
           if (simResult.success && simResult.netProfitEstimate?.isProfitable) {
             const result = await executionEngine.execute(
-              config.chains[0].aaveLendingPool,
-              "0x", // TODO(B6): replace with FlashArbExecutor calldata (see above)
+              config.chains[0].balancerVault,
+              "0x", // TODO(B6): replace with startArbitrage calldata (see above)
               loanSize,
               opp.tokens,
               reserves
