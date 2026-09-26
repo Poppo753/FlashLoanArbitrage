@@ -95,11 +95,21 @@ export class ExecutionEngine {
   async simulateTransaction(tx: ethers.TransactionRequest): Promise<boolean> {
     try {
       const result = await this.provider!.call(tx);
-      const success = result !== "0x" && result !== "0x0";
+      const success = this.decodeCallSuccess(result);
       logger.debug("Transaction simulation result", { success });
       return success;
     } catch (err: any) {
       logger.error("Transaction simulation reverted", { error: err.reason || err.message });
+      return false;
+    }
+  }
+
+  private decodeCallSuccess(result: string): boolean {
+    if (!result || result === "0x" || result === "0x0") return false;
+    try {
+      const decoded = ethers.AbiCoder.defaultAbiCoder().decode(["bool"], result);
+      return decoded[0] === true;
+    } catch {
       return false;
     }
   }

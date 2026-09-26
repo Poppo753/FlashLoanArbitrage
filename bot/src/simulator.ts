@@ -65,7 +65,7 @@ export class Simulator {
         maxPriorityFeePerGas: BigInt(config.priorityFeeWei),
       });
 
-      const success = callResult !== "0x";
+      const success = this.decodeCallSuccess(callResult);
       const result: SimulationResult = {
         success,
         returnValue: callResult,
@@ -162,6 +162,17 @@ export class Simulator {
       ...simResult,
       netProfitEstimate: netProfit,
     };
+  }
+
+  private decodeCallSuccess(callResult: string): boolean {
+    if (!callResult || callResult === "0x" || callResult === "0x0") return false;
+    try {
+      const iface = new ethers.Interface(this.flashLoanABI);
+      const decoded = iface.decodeFunctionResult("executeOperation", callResult);
+      return decoded[0] === true;
+    } catch {
+      return false;
+    }
   }
 
   private encodeFlashLoanCall(assets: string[], amounts: bigint[]): string {
