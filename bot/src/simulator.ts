@@ -104,7 +104,7 @@ export class Simulator {
   ): Promise<bigint> {
     try {
       const contract = new Contract(contractAddress, this.flashLoanABI, this.provider!);
-      const gas = await (contract.estimateGas as any).executeOperation(assets, amounts, amounts.map((a) => (a * BigInt(5)) / BigInt(10000)), "0x00000000000000000000000000000000000000", "0x")
+      const gas = await (contract.estimateGas as any).executeOperation(assets, amounts, amounts.map((a) => (a * BigInt(config.flashLoanPremiumBps)) / BigInt(10000)), "0x00000000000000000000000000000000000000", "0x")
         .catch(() => BigInt(2_000_000));
 
       logger.debug("Gas estimated", { contract: contractAddress, gas: gas.toString() });
