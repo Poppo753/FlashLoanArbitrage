@@ -24,6 +24,7 @@ contract FlashArbExecutorTest is Test {
         owner = address(this);
         attackerAddr = address(0x133700000000000000000000000000000001);
         vm.deal(attackerAddr, 100 ether);
+        vm.deal(address(this), 100 ether);
 
         pool = new MockAavePool();
         tokenA = new MockERC20("TokenA", "TKA", 18, 1_000_000 * 1e18);
@@ -32,10 +33,19 @@ contract FlashArbExecutorTest is Test {
         router0 = new MockUniswapRouter();
         router1 = new MockUniswapRouter();
 
+        tokenA.approve(address(pool), type(uint256).max);
+        tokenB.approve(address(pool), type(uint256).max);
+        tokenC.approve(address(pool), type(uint256).max);
+
         router0.setReserve(address(tokenA), 1_000_000 * 1e18);
         router0.setReserve(address(tokenB), 1_000_000 * 1e18);
+        router1.setReserve(address(tokenA), 1_000_000 * 1e18);
         router1.setReserve(address(tokenB), 1_000_000 * 1e18);
         router1.setReserve(address(tokenC), 1_000_000 * 1e18);
+
+        tokenB.mint(address(router0), 1_000_000 * 1e18);
+        tokenA.mint(address(router1), 1_000_000 * 1e18);
+        tokenC.mint(address(router1), 1_000_000 * 1e18);
 
         router0.setMultiplier(150);
         router1.setMultiplier(150);
@@ -48,6 +58,8 @@ contract FlashArbExecutorTest is Test {
             address(router1)
         );
     }
+
+    receive() external payable {}
 
     function _buildParams(address sellToken, address buyToken, uint256 minAmountOut) internal pure returns (bytes memory) {
         return abi.encode(sellToken, buyToken, minAmountOut);
@@ -155,9 +167,11 @@ contract FlashArbExecutorTest is Test {
         vm.expectRevert();
         executor.withdrawToken(address(tokenA));
 
+        uint256 balanceBefore = tokenA.balanceOf(owner);
         vm.prank(owner);
         executor.withdrawToken(address(tokenA));
-        assertEq(tokenA.balanceOf(owner), 1000 * 1e18);
+        assertEq(tokenA.balanceOf(owner), balanceBefore + 1000 * 1e18);
+        assertEq(tokenA.balanceOf(address(executor)), 0);
     }
 
     function test_WithdrawETH_OwnerOnly() public {
@@ -168,9 +182,11 @@ contract FlashArbExecutorTest is Test {
         vm.expectRevert();
         executor.withdrawETH();
 
+        uint256 balanceBefore = address(owner).balance;
         vm.prank(owner);
         executor.withdrawETH();
-        assertEq(address(owner).balance, 1 ether);
+        assertEq(address(owner).balance, balanceBefore + 1 ether);
+        assertEq(address(executor).balance, 0);
     }
 
     function test_FlashLoanRepayment_Exact() public {
@@ -180,22 +196,19 @@ contract FlashArbExecutorTest is Test {
         router0.setMultiplier(150);
         router1.setMultiplier(150);
 
-        address[] memory assets = new address[](1);
-        assets[0] = address(tokenA);
-        uint256[] memory amounts = new uint256[](1);
-        amounts[0] = AMOUNT;
-        uint256[] memory premiums = new uint256[](1);
-        premiums[0] = AMOUNT * 50 / 10000;
-
-        bytes memory params = _buildParams(address(tokenB), address(tokenC), 0);
-
         uint256 beforePoolTokenBalance = tokenA.balanceOf(address(pool));
 
-        vm.prank(address(pool));
-        executor.executeOperation(assets, amounts, premiums, address(this), params);
+        vm.prank(owner);
+        executor.executeArbitrage(
+            address(tokenA),
+            AMOUNT,
+            _buildParams(address(tokenB), address(tokenA), 0)
+        );
 
         uint256 afterPoolTokenBalance = tokenA.balanceOf(address(pool));
         assertGt(afterPoolTokenBalance, beforePoolTokenBalance);
+        uint256 premium = AMOUNT * 50 / 10000;
+        assertEq(afterPoolTokenBalance, beforePoolTokenBalance + premium);
     }
 
     function test_Paused_CircuitBreaker() public {
@@ -230,8 +243,17 @@ contract FlashArbExecutorTest is Test {
     }
 
     function test_ExecuteArbitrage_OnlyOwner() public {
+        _setupProfitableFlashLoan();
+        pool.deposit(address(tokenA), AMOUNT);
+
         vm.prank(owner);
-        executor.executeArbitrage(address(tokenA), AMOUNT, _buildParams(address(tokenB), address(tokenC), 0));
+        executor.executeArbitrage(
+            address(tokenA),
+            AMOUNT,
+            _buildParams(address(tokenB), address(tokenA), 0)
+        );
+
+        assertGt(tokenA.balanceOf(address(executor)), 0);
     }
 
     function test_Pause_Unpause_OwnerOnly() public {

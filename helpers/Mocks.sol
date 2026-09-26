@@ -18,7 +18,7 @@ contract MockERC20 {
         name = _name;
         symbol = _symbol;
         decimals = _decimals;
-        totalSupply = initialSupply * 10**uint256(_decimals);
+        totalSupply = initialSupply;
         balanceOf[msg.sender] = totalSupply;
     }
 
@@ -65,12 +65,15 @@ contract MockAavePool {
         address receiver,
         address[] calldata assets,
         uint256[] calldata amounts,
-        bytes calldata params
+        uint256[] calldata, // interestRateModes (unused, mode 0 only)
+        address, // onBehalfOf (unused)
+        bytes calldata params,
+        uint16 // referralCode (unused)
     ) external {
         require(balances[assets[0]] >= amounts[0], "Insufficient liquidity");
+        balances[assets[0]] -= amounts[0];
         IERC20(assets[0]).safeTransfer(receiver, amounts[0]);
 
-        uint256 premium = amounts[0] * flashLoanFee / 10000;
         uint256[] memory premiums = new uint256[](amounts.length);
         for (uint256 i = 0; i < amounts.length; i++) {
             premiums[i] = amounts[i] * flashLoanFee / 10000;
@@ -84,9 +87,8 @@ contract MockAavePool {
         );
         require(success, "Flash loan execution failed");
 
-        uint256 totalRepayment = amounts[0] + premiums[0];
-        require(balances[assets[0]] >= totalRepayment, "Repayment failed");
-        IERC20(assets[0]).safeTransferFrom(receiver, address(this), totalRepayment);
+        IERC20(assets[0]).safeTransferFrom(receiver, address(this), amounts[0] + premiums[0]);
+        balances[assets[0]] += amounts[0] + premiums[0];
     }
 
     function flashLoanDouble(
@@ -98,7 +100,6 @@ contract MockAavePool {
         require(balances[assets[0]] >= amounts[0], "Insufficient liquidity");
         IERC20(assets[0]).safeTransfer(receiver, amounts[0]);
 
-        uint256 premium = amounts[0] * flashLoanFee / 10000;
         uint256[] memory premiums = new uint256[](amounts.length);
         for (uint256 i = 0; i < amounts.length; i++) {
             premiums[i] = amounts[i] * flashLoanFee / 10000;
@@ -251,7 +252,7 @@ contract MockFlashLoanReceiver is IFlashLoanSimpleReceiver {
         internal pure
         returns (address sellToken, address buyToken, uint256 minAmountOut)
     {
-        require(params.length == 64, "Invalid params length");
+        require(params.length == 96, "Invalid params length");
         (sellToken, buyToken, minAmountOut) = abi.decode(params, (address, address, uint256));
     }
 

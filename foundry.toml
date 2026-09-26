@@ -1,21 +1,17 @@
-[profile]
-default = { libs = ["node_modules", "lib"] }
-[profile.foundry]
-src = ["contracts", "test", "helpers"]
+[profile.default]
+src = "contracts"
+test = "test"
+script = "script"
 out = "out"
 libs = ["lib"]
+solc_version = "0.8.20"
+optimizer = true
+optimizer_runs = 200
+evm_version = "paris"
 remappings = [
     "aave-v3-core/=lib/aave-v3-core/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "forge-std/=lib/forge-std/src/"
 ]
-
-[profile.solc]
-optimizer = true
-optimizer_runs = 200
-solc_version = "0.8.20"
-evm_version = "paris"
-
-[profile.test]
 fuzz = { runs = 10000 }
 invariant = { runs = 1000, depth = 15 }

@@ -98,13 +98,14 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
         )[1];
 
         uint256 totalCost = borrowAmount.add(premium);
-        uint256 profit = returned1.sub(totalCost);
         uint256 minRequiredProfit = totalCost.mul(minProfitBps).div(10000);
 
-        if (profit < minRequiredProfit) {
+        if (returned1 <= totalCost || returned1 - totalCost < minRequiredProfit) {
             emit ArbitrageFailed(borrowAsset, borrowAmount, "Insufficient profit");
             revert InsufficientProfit();
         }
+
+        uint256 profit = returned1 - totalCost;
 
         IERC20(borrowAsset).forceApprove(address(POOL), totalCost);
 
@@ -133,7 +134,7 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
         internal pure
         returns (address sellToken, address buyToken, uint256 minAmountOut)
     {
-        require(params.length == 64, "Invalid params length");
+        require(params.length == 96, "Invalid params length");
         (sellToken, buyToken, minAmountOut) = abi.decode(params, (address, address, uint256));
     }
 
