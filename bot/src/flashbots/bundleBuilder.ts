@@ -33,6 +33,20 @@ export interface SignedBundle {
   coinbaseTransfer: bigint;
 }
 
+export function toMinimalHex(value: bigint): string {
+  if (value < BigInt(0)) {
+    throw new Error("Cannot RLP-encode a negative integer");
+  }
+  if (value === BigInt(0)) {
+    return "0x";
+  }
+  let hex = value.toString(16);
+  if (hex.length % 2 !== 0) {
+    hex = "0" + hex;
+  }
+  return "0x" + hex;
+}
+
 export class BundleBuilder {
   private coinbaseTransfer: bigint = BigInt(0);
   private validityWindow: Validity = { startBlock: 0, endBlock: 0 };
@@ -129,12 +143,16 @@ export class BundleBuilder {
 
   encodeBundle(bundle: FlashbotsBundlePayload): string {
     try {
+      const coinbaseTransfer =
+        !bundle.coinbaseTransfer || bundle.coinbaseTransfer === "0x"
+          ? BigInt(0)
+          : BigInt(bundle.coinbaseTransfer);
       const rlpEncoded = ethers.encodeRlp([
         bundle.txs,
-        bundle.coinbaseTransfer || "0x",
-        String(bundle.validity.startBlock),
-        String(bundle.validity.endBlock),
-        String(bundle.timestamp),
+        toMinimalHex(coinbaseTransfer),
+        toMinimalHex(BigInt(bundle.validity.startBlock)),
+        toMinimalHex(BigInt(bundle.validity.endBlock)),
+        toMinimalHex(BigInt(bundle.timestamp)),
       ]);
 
       logger.debug("Bundle encoded with RLP", {

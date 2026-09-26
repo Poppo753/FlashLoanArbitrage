@@ -1,4 +1,4 @@
-export { bundleBuilder, BundleBuilder } from "./bundleBuilder";
+export { bundleBuilder, BundleBuilder, toMinimalHex } from "./bundleBuilder";
 export type { Transaction, Validity, FlashbotsBundlePayload, SignedBundle } from "./bundleBuilder";
 export { flashbotsService, FlashbotsService } from "./flashbotsService";
 export type { BundleSubmissionResult, BundleStatus } from "./flashbotsService";
