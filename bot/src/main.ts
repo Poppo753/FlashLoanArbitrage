@@ -55,12 +55,10 @@ async function initializeBot(): Promise<void> {
 
 async function startMonitoring(): Promise<void> {
   try {
-    // TODO(B17): config only exposes one token per chain (WETH), and execution
-    // always runs on config.chains[0], so a cross-chain token universe could
-    // never execute. A per-chain token list (e.g. ETHEREUM_TOKENS) must be
-    // added to config.ts to widen the single-chain universe; until then only
-    // the primary chain WETH is scanned.
-    const tokens = [config.chains[0].wethAddress];
+    // Detection universe comes from MONITOR_TOKENS (falls back to a built-in
+    // mainnet list) so every monitored pair is scanned, all on the primary
+    // chain - execution is chain[0]-only by design.
+    const tokens = poolMonitor.tokensToMonitor(config.chains[0]);
     const opportunities = await opportunityDetector.detectAllOpportunities(tokens);
 
     if (opportunities.length > 0) {

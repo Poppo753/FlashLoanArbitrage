@@ -280,7 +280,7 @@ export class PoolMonitor {
     return this._isRunning;
   }
 
-  private resolveTokensToMonitor(chain: ChainConfig): string[] {
+  tokensToMonitor(chain: ChainConfig): string[] {
     const weth = chain.wethAddress;
     const envTokens = (process.env.MONITOR_TOKENS || "")
       .split(",")
@@ -328,7 +328,7 @@ export class PoolMonitor {
       return;
     }
 
-    const tokens = this.resolveTokensToMonitor(chain);
+    const tokens = this.tokensToMonitor(chain);
     if (tokens.length < 2) {
       this.logger.warn(
         "No token pairs to monitor; set MONITOR_TOKENS (comma-separated token addresses)",
