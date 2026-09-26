@@ -52,11 +52,18 @@ export class ProfitCalculator {
         return this.emptyResult();
       }
 
-      const beforePrice = Number(reserve.reserveOut) / Number(reserve.reserveIn);
-      const amountOut = this.swapAmount(currentAmount, reserve.reserveIn, reserve.reserveOut);
+      const reserveInBefore = reserve.reserveIn;
+      const reserveOutBefore = reserve.reserveOut;
+      const beforePrice = Number(reserveOutBefore) / Number(reserveInBefore);
+      const amountInStep = currentAmount;
+      const amountOut = this.swapAmount(amountInStep, reserveInBefore, reserveOutBefore);
+      const reserveInAfter = reserveInBefore + amountInStep;
+      const reserveOutAfter = reserveOutBefore - amountOut;
+      const afterPrice = Number(reserveOutAfter) / Number(reserveInAfter);
       currentAmount = amountOut;
-      const afterPrice = Number(reserve.reserveOut) / Number(reserve.reserveIn);
-      priceImpactTotal += Math.abs(beforePrice - afterPrice) / beforePrice;
+      if (beforePrice > 0) {
+        priceImpactTotal += Math.abs(beforePrice - afterPrice) / beforePrice;
+      }
     }
 
     const gasPriceWei = this.effectiveGasPriceWei();
