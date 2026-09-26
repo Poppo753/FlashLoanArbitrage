@@ -268,6 +268,22 @@ contract ArbitragePlugin is IFlashLoanCallback, Ownable, Pausable {
     }
 
     /**
+     * @notice Emergency stop: blocks `startArbitrage` while leaving funds and
+     *         configuration untouched.
+     * @dev OZ v5 keeps `_pause`/`_unpause` internal, so the owner-facing
+     *      wrappers live here. Unpausing is deliberately separate from pausing
+     *      so recovery is always an explicit, auditable act.
+     */
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /// @notice Resumes `startArbitrage` after a pause.
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    /**
      * @notice Sends `amount` of `token` to `to` (PULL pattern, no `.transfer` - audit finding C2).
      * @param token Token to withdraw.
      * @param to Recipient of the tokens.
