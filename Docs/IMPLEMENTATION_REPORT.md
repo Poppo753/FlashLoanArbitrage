@@ -53,7 +53,7 @@ underpay. Four things changed.
 
 | # | Change | TSC (verified by reading the reference) | Here | Why |
 |---|---|---|---|---|
-| 1 | **Authorization: Beacon registry → single immutable caller** | `import "../interfaces/IBeacon.sol"`, `_isRegisteredPlugin(msg.sender)` looked the name up in a `Beacon` contract | `address public immutable authorizedCaller` set in the constructor; `_isAuthorizedCaller` compares to it; error `NotAuthorizedCaller(address)` | Plan D11. The name→address registry exists for a protocol with many modules; this project has exactly one executor. Saves ~40 lines and three files, and removes a mutable entry point that would have to be kept locked. |
+| 1 | **Authorization: Beacon registry → single immutable caller** | `import "../interfaces/IBeacon.sol"`, `_isRegisteredPlugin(msg.sender)` looked the name up in a `Beacon` contract | `address public immutable authorizedCaller` set in the constructor; `_isAuthorizedCaller` compares to it; error `NotAuthorizedCaller(address)` | Plan D11. The name→address registry exists for a protocol with many modules; this project has exactly one executor. Drops 425 lines across three files (`Beacon.sol` 384, `IBeacon.sol` 7, `MockBeacon.sol` 34), and removes a mutable entry point that would have to be kept locked. |
 | 2 | **Swap/pricing helpers dropped** | `function swap(...)`, `function getExpectedOutput(...)`, `function estimateFromTokenManager(...)`, plus `import "../interfaces/ISimpleSwap.sol"` and `"../interfaces/ITokenManagerForModules.sol"` | absent | The plugin performs the swaps itself, and the `TokenManager`/`ProxyGeneral` custody model belongs to the reference protocol, not to an atomic arb. Every route in the plugin is a two-hop single-pair swap. |
 | 3 | **OpenZeppelin v4 → v5 import paths** | `import "@openzeppelin/contracts/security/ReentrancyGuard.sol"` (v4 path) | `import "@openzeppelin/contracts/utils/ReentrancyGuard.sol"` | This repo vendors OpenZeppelin **5.7.0** (verified: `lib/openzeppelin-contracts/package.json` → `5.7.0`); `security/` does not exist there. |
 | 4 | **Compiler 0.8.20 → 0.8.27** | `pragma solidity ^0.8.27` | `foundry.toml` → `solc_version = "0.8.27"` (with `optimizer = true`, `optimizer_runs = 200`, `evm_version = "paris"`) | The service is `^0.8.27`; the whole project was moved up in phase 0 so a single compiler serves every file. |
@@ -174,8 +174,13 @@ the call in the same broadcast, and `ForkBase.setUp` asserts the wiring in every
 `available = baseAfter − (baseBefore − principal)`. Subtracting the pre-existing balance means
 profit from earlier cycles can never be used to service the current loan — the cycle must
 repay from what it produced. This carries forward lesson C1 from the previous audit round.
-It is covered by `test_RetainedProfitCannotRepayALosingCycle` (mock) and by
-`test_WrongDirection_AfterOneSidedDisplacement_IsRejected` (fork).
+It is covered by `test_RetainedProfitCannotRepayALosingCycle` in the mock suite — that is the
+test that actually exercises the invariant, by pre-funding the plugin and asserting a cycle that
+returns less than the principal still reverts. The fork suite is weaker on this specific point:
+`test_WrongDirection_AfterOneSidedDisplacement_IsRejected` shows a reverting cycle leaves the
+plugin at zero USDC and never touches the vault, but it does not pre-fund the plugin first, so it
+does not by itself prove retained profit cannot mask a bad cycle on real state. Closing that gap
+on the fork is listed in the follow-ups.
 
 ---
 
@@ -394,9 +399,9 @@ Explicit list. None of these is "in progress"; none is a bug.
 | **Live deployment** | Not performed. `script/Deploy.s.sol` has been simulated (dry-run against chain 42161) and never broadcast. No contract exists on any public network. |
 | **Any real trade** | **None has ever been placed.** Every profit figure in this report comes from a fork simulation at block 509,000,000. |
 | **Third-party audit** | None. `Docs/AUDIT_LOG.md` round 1 is an internal review of the *previous* system. |
-| **Audit-log round 2 and checklist sign-off** | Checklist item T9.3 is still open: `Docs/AUDIT_LOG.md` has not been extended with a round covering this migration, and `Docs/ARBITRAGE_CHECKLIST.md` is still unchecked. Both are outside the scope of the documentation pass that produced this report. |
-| **Cleanup of Aave-era leftovers** | Still present and still building: the `aave-v3-core` remapping in `foundry.toml` and `lib/aave-v3-core` (imported by nothing), `contracts/interfaces/IUniswapV2Router.sol` plus `helpers/Mocks.sol::MockUniswapRouter` (imported by nothing), `helpers/Constants.sol` (imported by nothing), and the root `.env.example`, which still documents `AAVE_POOL_ADDRESS`, `ROUTER_0_ADDRESS`, `ROUTER_1_ADDRESS` and `MIN_PROFIT_BPS` — variables the deploy script no longer reads. The authoritative env list is the table in `../README.md`. |
-| **Open audit items carried over** | C4 (`initiator` validation), B6 (real execution calldata), B8 (real backrun bundles), B24 (`database.save*` / `flashbots` module unwired), D4 (Foundry install helpers tracked at the repo root). |
+| **C1 invariant on real state** | The retained-profit invariant is proven by `test_RetainedProfitCannotRepayALosingCycle` in the mock suite only. The fork suite shows a reverting cycle leaves the plugin empty and the vault untouched, but never pre-funds the plugin first, so the invariant is not yet demonstrated on a fork. Add a fork test that pre-funds the plugin and asserts a sub-principal cycle still reverts. |
+| **Audit-log round 2** | `Docs/AUDIT_LOG.md` still covers only round 1 (the Aave system). It has not been extended with a round for this migration. |
+| **Open audit items carried over** | C4 (`initiator` validation), B6 (real execution calldata and the bot-to-plugin path), B8 (real backrun bundles), B24 (`database.save*` / `flashbots` module unwired), D4 (Foundry install helpers tracked at the repo root). |
 
 ---
 

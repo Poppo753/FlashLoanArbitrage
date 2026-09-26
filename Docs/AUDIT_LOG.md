@@ -3,7 +3,14 @@
 Registro degli audit, fix e decisioni aperte. **Ogni fix ha un commit, ogni voce ha una data.**
 
 - **Ultimo aggiornamento:** 2026-09-26
-- **Audit completo repository:** 2026-09-26
+- **Round 1 — audit completo repository (sistema Aave/Ethereum):** 2026-09-26
+- **Round 2 — migrazione a Balancer/Arbitrum:** 2026-09-26 (vedi `IMPLEMENTATION_REPORT.md`)
+
+> **Come leggere questo file.** Il Round 1 riguarda il sistema *Aave su Ethereum*, che il Round 2
+> ha **sostituito**. I finding `C1-C6`, `T1-T2` e `D1-D5` descrivono codice che non esiste più su
+> questo branch: è preservato sul branch `Dev` e nella storia git, e resta consultabile. I
+> finding `B1-B24` (bot TypeScript) invece sono ancora attuali e il Round 2 li ha in parte
+> ereditati. Per lo stato corrente del sistema vedi `README.md` e `IMPLEMENTATION_REPORT.md`.
 
 ---
 
