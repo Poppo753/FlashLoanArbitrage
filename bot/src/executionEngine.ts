@@ -127,7 +127,12 @@ export class ExecutionEngine {
 
     try {
       const flashbotsProvider = this.getFlashbotsProvider();
-      await flashbotsProvider.sendRawTransaction(signedTx);
+      const relayHash: string = await flashbotsProvider.sendRawTransaction(signedTx);
+      if (relayHash.toLowerCase() !== txHash.toLowerCase()) {
+        throw new Error(
+          `Flashbots relay returned unexpected tx hash ${relayHash} (expected ${txHash})`
+        );
+      }
 
       logger.info("Transaction submitted to Flashbots", {
         txHash,
@@ -271,7 +276,7 @@ export class ExecutionEngine {
   private getFlashbotsProvider(): any {
     const flashbotsUrl = process.env.FLASHBOTS_URL || "https://relay.flashbots.net";
     return {
-      sendRawTransaction: async (signedTx: string) => {
+      sendRawTransaction: async (signedTx: string): Promise<string> => {
         const response = await fetch(flashbotsUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -282,7 +287,36 @@ export class ExecutionEngine {
             params: [signedTx],
           }),
         });
-        return response.json();
+
+        let body: any = null;
+        try {
+          body = await response.json();
+        } catch {
+          body = null;
+        }
+
+        if (!response.ok) {
+          throw new Error(
+            `Flashbots relay HTTP ${response.status}: ${
+              body !== null ? JSON.stringify(body) : response.statusText
+            }`
+          );
+        }
+
+        if (body && typeof body === "object" && body.error) {
+          throw new Error(`Flashbots relay rejected transaction: ${JSON.stringify(body.error)}`);
+        }
+
+        const resultHash = body && typeof body === "object" ? body.result : undefined;
+        if (typeof resultHash !== "string" || !ethers.isHexString(resultHash, 32)) {
+          throw new Error(
+            `Unexpected Flashbots relay response: ${
+              body !== null ? JSON.stringify(body) : "<invalid json>"
+            }`
+          );
+        }
+
+        return resultHash;
       },
     };
   }
