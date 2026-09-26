@@ -31,9 +31,11 @@ import {IUniswapV3Router} from "../../contracts/interfaces/IUniswapV3Router.sol"
  *    (it only deploys and wires contracts), so a non-fork run touches no network at all.
  *    This is the same "this.skip()" pattern the reference Hardhat suite uses.
  *
- * 3. `forkEnabled()` is true when `FORK_ENABLED=true` is exported OR when forge is already
- *    running against a fork (`vm.activeFork() > 0`), so the documented command in (1) works
+ * 3. `forkEnabled()` is true when `FORK_ENABLED=true` is exported OR when real bytecode is
+ *    present at the canonical Balancer vault address, so the documented command in (1) works
  *    with or without the environment variable. It is false for a bare `forge test`.
+ *    (`vm.activeFork()` is deliberately NOT used: with a CLI-level fork it returns 0, so testing
+ *    it against 0 would skip every suite even while forking. See `forkEnabled()`.)
  *
  * 4. `FORK_BLOCK_NUMBER` overrides the pin without editing code. The pin is the
  *    authoritative default; the env var exists so a block can be re-pinned for a

@@ -56,7 +56,7 @@
 - Fallback pubblico `https://arb1.arbitrum.io/rpc` per giri senza key (rate-limitati).
 
 ### D8 — Toolchain: solc 0.8.27, OZ v5, import adattati
-- `foundry.toml`: `solc = "0.8.27"` (prereq del FlashLoanService), optimizer on.
+- `foundry.toml`: `solc_version = "0.8.27"` (prereq del FlashLoanService), optimizer on.
 - Adattamenti obbligati durante la copia (OZ v4.9 → v5.x):
   - `@openzeppelin/contracts/security/ReentrancyGuard.sol` → `@openzeppelin/contracts/utils/ReentrancyGuard.sol`;
   - `Ownable()` no-arg → `Ownable(msg.sender)` (Beacon);
