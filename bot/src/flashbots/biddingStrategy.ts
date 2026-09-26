@@ -42,11 +42,10 @@ export class BiddingStrategy {
       }
 
       const confidenceFactorScaled = Math.floor(this.confidenceFactor * 10000);
-      const denominator = competitorCount + 1;
-      const numerator = competitorCount;
+      const numerator = competitorCount * confidenceFactorScaled;
+      const denominator = (competitorCount + 1) * 10000;
 
-      const tipFraction = (numerator * confidenceFactorScaled) / (denominator * 10000);
-      const optimalTip = (grossProfitWei * BigInt(tipFraction)) / BigInt(10000);
+      const optimalTip = (grossProfitWei * BigInt(numerator)) / BigInt(denominator);
 
       logger.debug("Optimal tip calculated", {
         grossProfitWei: grossProfitWei.toString(),
