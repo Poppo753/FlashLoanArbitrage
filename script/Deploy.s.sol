@@ -7,11 +7,11 @@ import {FlashArbExecutor} from "../contracts/FlashArbExecutor.sol";
 
 contract Deploy is Script {
     function run() external {
-        address poolAddress = 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2;
-        address owner = vm.envAddress("OWNER");
-        address router0 = 0x0000000000000000000000000000000000000001;
-        address router1 = 0x0000000000000000000000000000000000000002;
-        uint256 minProfitBps = 50;
+        address poolAddress = vm.envAddress("AAVE_POOL_ADDRESS");
+        address owner = vm.envAddress("OWNER_ADDRESS");
+        address router0 = vm.envAddress("ROUTER_0_ADDRESS");
+        address router1 = vm.envAddress("ROUTER_1_ADDRESS");
+        uint256 minProfitBps = vm.envUint("MIN_PROFIT_BPS");
 
         vm.startBroadcast();
         FlashArbExecutor executor = new FlashArbExecutor(poolAddress, owner, minProfitBps, router0, router1);
