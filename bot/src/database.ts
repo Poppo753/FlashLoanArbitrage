@@ -234,25 +234,31 @@ export class Database {
     totalOpportunities: number;
     totalExecuted: number;
     totalProfitWei: string;
-    avgProfitUsd: number;
+    avgProfitUsd: number | null;
   }> {
     if (!this.pool) throw new Error("Database not initialized");
 
     const result = await this.pool.query(`
-      SELECT 
-        COUNT(*) as total_opportunities,
-        COUNT(CASE WHEN e.status = 'success' THEN 1 END) as total_executed,
-        COALESCE(SUM(o.net_profit_wei::numeric), 0) as total_profit_wei
-      FROM opportunities o
-      LEFT JOIN executions e ON o.id = e.opportunity_id
+      SELECT
+        (SELECT COUNT(*) FROM opportunities) as total_opportunities,
+        (SELECT COUNT(*) FROM executions WHERE status = 'success') as total_executed,
+        COALESCE((
+          SELECT SUM(o.net_profit_wei::numeric)
+          FROM opportunities o
+          WHERE EXISTS (
+            SELECT 1 FROM executions e
+            WHERE e.opportunity_id = o.id AND e.status = 'success'
+          )
+        ), 0) as total_profit_wei
     `);
 
     const row = result.rows[0];
     return {
       totalOpportunities: parseInt(row.total_opportunities, 10),
       totalExecuted: parseInt(row.total_executed, 10),
-      totalProfitWei: row.total_profit_wei,
-      avgProfitUsd: 0,
+      totalProfitWei: String(row.total_profit_wei ?? "0"),
+      // Schema stores profit only in wei (no USD columns/prices), so no USD average can be computed.
+      avgProfitUsd: null,
     };
   }
 
