@@ -9,6 +9,26 @@ import { database } from "./database";
 
 let isShuttingDown: boolean = false;
 
+async function isGasPriceAcceptable(): Promise<boolean> {
+  try {
+    const feeData = await simulator.getFeeData();
+    const gasPriceGwei = Number(feeData.gasPrice) / 1e9;
+    const maxGasPriceGwei = config.thresholds.maxGasPriceGwei;
+    if (gasPriceGwei > maxGasPriceGwei) {
+      debug("Skipping opportunity: gas price above maxGasPriceGwei", {
+        gasPriceGwei,
+        maxGasPriceGwei,
+        priorityFeeGwei: Number(feeData.maxPriorityFeePerGas) / 1e9,
+      });
+      return false;
+    }
+    return true;
+  } catch (err) {
+    warn("Gas price unavailable; skipping maxGasPriceGwei check", { error: String(err) });
+    return true;
+  }
+}
+
 async function initializeBot(): Promise<void> {
   info("Starting Flash Loan Arbitrage Bot...");
 
@@ -56,6 +76,18 @@ async function startMonitoring(): Promise<void> {
         );
 
         if (profitResult.isProfitable) {
+          if (profitResult.netProfitUsd < config.thresholds.minProfitUsd) {
+            debug("Opportunity below minProfitUsd threshold", {
+              netProfitUsd: profitResult.netProfitUsd,
+              minProfitUsd: config.thresholds.minProfitUsd,
+            });
+            continue;
+          }
+
+          if (!(await isGasPriceAcceptable())) {
+            continue;
+          }
+
           info("Profitable opportunity found", {
             type: opp.type,
             profitWei: profitResult.netProfitWei.toString(),
