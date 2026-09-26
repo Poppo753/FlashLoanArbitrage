@@ -149,6 +149,8 @@ abstract contract ForkBase is Test {
 
     /// @dev `slot0().sqrtPriceX96` is `sqrt(token1/token0)` in Q64.96.
     uint256 internal constant SQRT_PRICE_SCALE = 1 << 96;
+    /// @dev `SQRT_PRICE_SCALE^2` = 2^192, the divisor that turns `sqrtPriceX96^2` into a ratio.
+    uint256 internal constant SQRT_PRICE_SCALE_SQUARED = 1 << 192;
     /// @dev Uniswap V3 expresses the pool fee in 1e-6. The plugin only ever uses 500 (0.05%).
     uint24 internal constant V3_FEE = 500;
     uint256 internal constant V3_FEE_DENOMINATOR = 1_000_000;
@@ -208,6 +210,9 @@ abstract contract ForkBase is Test {
      *      only trustworthy witness that the requested pin is the one in use.
      */
     function _assertPinnedBlock() internal view {
+        // Safe: `block.timestamp` is read from the forked header, never from a snapshot the test
+        // itself created, so a later `vm.revertToState` in the same test cannot mask a wrong pin.
+        // forge-lint: disable-next-line(environment-read-across-mutation)
         assertEq(block.timestamp, FORK_BLOCK_TIMESTAMP, "not on the pinned block; pass --fork-block-number");
     }
 
@@ -248,11 +253,7 @@ abstract contract ForkBase is Test {
         // assert is the test-side confirmation that the pair (WETH, USDC, 500) is the pool
         // the plugin will really use.
         assertEq(IV3PoolOrder(V3_POOL).token0(), WETH, "V3 pool token0 must be WETH");
-        assertEq(
-            IUniswapV2Factory(V2_FACTORY).getPair(USDC, WETH),
-            V2_PAIR,
-            "V2 pair must be order-independent"
-        );
+        assertEq(IUniswapV2Factory(V2_FACTORY).getPair(USDC, WETH), V2_PAIR, "V2 pair must be order-independent");
     }
 
     // ==================== FUNDING ====================
@@ -291,11 +292,14 @@ abstract contract ForkBase is Test {
      */
     function _whaleSellWethOnV2(uint256 wethIn) internal returns (uint256 usdcOut) {
         _fundGas(WHALE);
+        // Safe: the deadline is a fresh value derived from the current fork time on every call,
+        // so it is not a stale read that a snapshot revert could reuse.
+        // forge-lint: disable-next-line(environment-read-across-mutation)
+        uint256 deadline = block.timestamp + DEADLINE_WINDOW;
         vm.startPrank(WHALE);
         IERC20(WETH).forceApprove(V2_ROUTER, wethIn);
-        usdcOut = IUniswapV2Router02(V2_ROUTER).swapExactTokensForTokens(
-            wethIn, 0, _path(WETH, USDC), WHALE, block.timestamp + DEADLINE_WINDOW
-        )[1];
+        usdcOut =
+            IUniswapV2Router02(V2_ROUTER).swapExactTokensForTokens(wethIn, 0, _path(WETH, USDC), WHALE, deadline)[1];
         vm.stopPrank();
     }
 
@@ -308,9 +312,8 @@ abstract contract ForkBase is Test {
         _fundGas(WHALE);
         vm.startPrank(WHALE);
         IERC20(USDC).forceApprove(V2_ROUTER, usdcIn);
-        wethOut = IUniswapV2Router02(V2_ROUTER).swapExactTokensForTokens(
-            usdcIn, 0, _path(USDC, WETH), WHALE, block.timestamp + DEADLINE_WINDOW
-        )[1];
+        wethOut = IUniswapV2Router02(V2_ROUTER)
+            .swapExactTokensForTokens(usdcIn, 0, _path(USDC, WETH), WHALE, block.timestamp + DEADLINE_WINDOW)[1];
         vm.stopPrank();
     }
 
@@ -336,15 +339,29 @@ abstract contract ForkBase is Test {
     /**
      * @dev V3 spot price of WETH in micro-USDC per WETH wei, read from `slot0`.
      *      Same quantity as `_v2Price`, so the two are directly comparable.
-     *      `sqrtPriceX96^2 / 2^96` is token1 per token0 in raw units; with token0 = WETH and
-     *      token1 = USDC that is already micro-USDC per WETH wei. The inverted branch is kept
-     *      so the helper stays correct if the pool's token ordering ever changes.
+     *
+     *      `sqrtPriceX96 = sqrt(ratio) * 2^96`, so the raw token1/token0 ratio is
+     *      `sqrtPriceX96^2 / 2^192`. Two traps, both hit in practice:
+     *
+     *        1. dividing by 2^96 instead of 2^192 leaves the result scaled by another 2^96;
+     *        2. the correct ratio is ~2.68e-9 - less than 1 - so a plain integer division
+     *           truncates to ZERO.
+     *
+     *      Both are avoided by scaling the quotient up by 1e18 before dividing, which is also
+     *      exactly the scale `_v2Price` works at (`reserve1 * 1e18 / reserve0`), so the two
+     *      helpers return the same units and `_priceGapBps` compares them meaningfully.
+     *      With token0 = WETH and token1 = USDC the ratio is raw USDC units per raw WETH wei,
+     *      and one raw USDC unit is one micro-USDC.
+     *
+     *      (`ArbitragePlugin._v3Quote` divides by 2^96 twice and then multiplies by `amountIn`,
+     *      which cancels the scale - the contract is unaffected by any of this.)
      */
     function _v3Price() internal view returns (uint256) {
         (uint160 sqrtPriceX96,,,,,,) = IUniswapV3Pool(V3_POOL).slot0();
         require(sqrtPriceX96 != 0, "ForkBase: V3 pool uninitialised");
-        uint256 priceX96 = Math.mulDiv(uint256(sqrtPriceX96), uint256(sqrtPriceX96), SQRT_PRICE_SCALE);
-        return IV3PoolOrder(V3_POOL).token0() == WETH ? priceX96 : Math.mulDiv(1e18, 1e18, priceX96);
+        uint256 scaled = Math.mulDiv(uint256(sqrtPriceX96), uint256(sqrtPriceX96), SQRT_PRICE_SCALE_SQUARED / 1e18);
+        require(scaled != 0, "ForkBase: V3 ratio below representable precision");
+        return IV3PoolOrder(V3_POOL).token0() == WETH ? scaled : Math.mulDiv(1e18, 1e18, scaled);
     }
 
     /// @dev Signed relative distance between two prices, in basis points.
