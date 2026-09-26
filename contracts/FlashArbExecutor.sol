@@ -68,6 +68,11 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
         (address sellToken, address buyToken, uint256 minAmountOut) = _decodeParams(params);
 
         address borrowAsset = assets[0];
+
+        if (buyToken != borrowAsset) {
+            revert InvalidBuyAsset();
+        }
+
         uint256 borrowAmount = amounts[0];
         uint256 premium = premiums[0];
 
@@ -139,3 +144,4 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
 
 error OnlyPoolCaller();
 error InsufficientProfit();
+error InvalidBuyAsset();

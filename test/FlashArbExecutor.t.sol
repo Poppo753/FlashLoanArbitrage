@@ -81,7 +81,7 @@ contract FlashArbExecutorTest is Test {
         uint256[] memory premiums = new uint256[](1);
         premiums[0] = AMOUNT * 50 / 10000;
 
-        bytes memory params = _buildParams(address(tokenB), address(tokenC), 0);
+        bytes memory params = _buildParams(address(tokenB), address(tokenA), 0);
 
         vm.prank(address(pool));
         bool result = executor.executeOperation(assets, amounts, premiums, address(this), params);
@@ -102,10 +102,28 @@ contract FlashArbExecutorTest is Test {
         uint256[] memory premiums = new uint256[](1);
         premiums[0] = AMOUNT * 50 / 10000;
 
-        bytes memory params = _buildParams(address(tokenB), address(tokenC), 0);
+        bytes memory params = _buildParams(address(tokenB), address(tokenA), 0);
 
         vm.prank(address(pool));
         vm.expectRevert(InsufficientProfit.selector);
+        executor.executeOperation(assets, amounts, premiums, address(this), params);
+    }
+
+    function test_ExecuteOperation_WrongBuyAsset_Reverts() public {
+        _setupProfitableFlashLoan();
+        pool.deposit(address(tokenA), AMOUNT);
+
+        address[] memory assets = new address[](1);
+        assets[0] = address(tokenA);
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = AMOUNT;
+        uint256[] memory premiums = new uint256[](1);
+        premiums[0] = AMOUNT * 50 / 10000;
+
+        bytes memory params = _buildParams(address(tokenB), address(tokenC), 0);
+
+        vm.prank(address(pool));
+        vm.expectRevert(InvalidBuyAsset.selector);
         executor.executeOperation(assets, amounts, premiums, address(this), params);
     }
 
@@ -117,15 +135,12 @@ contract FlashArbExecutorTest is Test {
     function test_OnlyOwner_Caller() public {
         vm.prank(attackerAddr);
         vm.expectRevert();
-        executor.executeArbitrage(address(tokenA), AMOUNT, _buildParams(address(tokenB), address(tokenC), 0));
+        executor.executeArbitrage(address(tokenA), AMOUNT, _buildParams(address(tokenB), address(tokenA), 0));
     }
 
     function test_ReentrancyProtection() public {
         _setupProfitableFlashLoan();
         pool.deposit(address(tokenA), AMOUNT);
-
-        router0.setMultiplier(150);
-        router1.setMultiplier(150);
 
         address[] memory assets = new address[](1);
         assets[0] = address(tokenA);
@@ -134,13 +149,21 @@ contract FlashArbExecutorTest is Test {
         uint256[] memory premiums = new uint256[](1);
         premiums[0] = AMOUNT * 50 / 10000;
 
-        bytes memory params = _buildParams(address(tokenB), address(tokenC), 0);
+        bytes memory params = _buildParams(address(tokenB), address(tokenA), 0);
 
-        ReentrancyAttacker attacker =
-            new ReentrancyAttacker(address(executor), address(pool), assets, amounts, premiums, params);
+        bytes memory reenterCall = abi.encodeWithSelector(
+            FlashArbExecutor.executeOperation.selector, assets, amounts, premiums, address(this), params
+        );
+        router0.setReentrancyHook(address(executor), reenterCall);
 
-        vm.expectRevert();
-        attacker.attack();
+        vm.prank(owner);
+        executor.executeArbitrage(address(tokenA), AMOUNT, params);
+
+        assertFalse(router0.reenterOk());
+        assertEq(
+            keccak256(router0.reenterResult()),
+            keccak256(abi.encodeWithSignature("ReentrancyGuardReentrantCall()"))
+        );
     }
 
     function test_WithdrawToken_OwnerOnly() public {
@@ -204,7 +227,7 @@ contract FlashArbExecutorTest is Test {
         uint256[] memory premiums = new uint256[](1);
         premiums[0] = AMOUNT * 50 / 10000;
 
-        bytes memory params = _buildParams(address(tokenB), address(tokenC), 0);
+        bytes memory params = _buildParams(address(tokenB), address(tokenA), 0);
 
         vm.prank(owner);
         executor.pause();
@@ -248,36 +271,4 @@ contract FlashArbExecutorTest is Test {
         executor.unpause();
         assertFalse(executor.paused());
     }
-}
-
-contract ReentrancyAttacker {
-    FlashArbExecutor public executor;
-    MockAavePool public pool;
-    address[] assets;
-    uint256[] amounts;
-    uint256[] premiums;
-    bytes params;
-    bool public reentered;
-
-    constructor(
-        address _executor,
-        address _pool,
-        address[] memory _assets,
-        uint256[] memory _amounts,
-        uint256[] memory _premiums,
-        bytes memory _params
-    ) {
-        executor = FlashArbExecutor(payable(_executor));
-        pool = MockAavePool(_pool);
-        assets = _assets;
-        amounts = _amounts;
-        premiums = _premiums;
-        params = _params;
-    }
-
-    function attack() external {
-        pool.flashLoanDouble(address(executor), assets, amounts, params);
-    }
-
-    receive() external payable {}
 }

@@ -91,37 +91,6 @@ contract MockAavePool {
         balances[assets[0]] += amounts[0] + premiums[0];
     }
 
-    function flashLoanDouble(
-        address receiver,
-        address[] calldata assets,
-        uint256[] calldata amounts,
-        bytes calldata params
-    ) external {
-        require(balances[assets[0]] >= amounts[0], "Insufficient liquidity");
-        IERC20(assets[0]).safeTransfer(receiver, amounts[0]);
-
-        uint256[] memory premiums = new uint256[](amounts.length);
-        for (uint256 i = 0; i < amounts.length; i++) {
-            premiums[i] = amounts[i] * flashLoanFee / 10000;
-        }
-
-        (bool success, ) = receiver.call(
-            abi.encodeWithSignature(
-                "executeOperation(address[],uint256[],uint256[],address,bytes)",
-                assets, amounts, premiums, address(this), params
-            )
-        );
-        require(success, "Flash loan first execution failed");
-
-        (success, ) = receiver.call(
-            abi.encodeWithSignature(
-                "executeOperation(address[],uint256[],uint256[],address,bytes)",
-                assets, amounts, premiums, address(this), params
-            )
-        );
-        require(success, "Flash loan second execution failed");
-    }
-
     function deposit(address token, uint256 amount) external {
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         balances[token] += amount;
@@ -140,12 +109,22 @@ contract MockUniswapRouter is IUniswapV2Router {
     uint256 public multiplier = 100;
     mapping(address => uint256) public reserves;
 
+    address public reenterTarget;
+    bytes public reenterData;
+    bool public reenterOk;
+    bytes public reenterResult;
+
     function setMultiplier(uint256 _multiplier) external {
         multiplier = _multiplier;
     }
 
     function setReserve(address token, uint256 amount) external {
         reserves[token] = amount;
+    }
+
+    function setReentrancyHook(address target, bytes calldata data) external {
+        reenterTarget = target;
+        reenterData = data;
     }
 
     function swapExactTokensForTokens(
@@ -155,6 +134,11 @@ contract MockUniswapRouter is IUniswapV2Router {
         address to,
         uint256 deadline
     ) external returns (uint256[] memory amounts) {
+        if (reenterTarget != address(0)) {
+            (reenterOk, reenterResult) = reenterTarget.call(reenterData);
+            reenterTarget = address(0);
+        }
+
         amounts = new uint256[](2);
         amounts[0] = amountIn;
 
