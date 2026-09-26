@@ -15,7 +15,6 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
 
     event ArbitrageStarted(address indexed borrowAsset, uint256 amount, bytes32 paramsHash);
     event ArbitrageCompleted(address indexed borrowAsset, uint256 profitBps, uint256 netProfit);
-    event ArbitrageFailed(address indexed borrowAsset, uint256 amount, string reason);
 
     IPool public immutable POOL;
     uint256 public minProfitBps;
@@ -61,7 +60,6 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
         bytes calldata params
     ) external nonReentrant whenNotPaused returns (bool) {
         if (msg.sender != address(POOL)) {
-            emit ArbitrageFailed(assets[0], amounts[0], "Only pool can call");
             revert OnlyPoolCaller();
         }
 
@@ -94,7 +92,6 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
         uint256 minRequiredProfit = totalCost.mul(minProfitBps).div(10000);
 
         if (returned1 <= totalCost || returned1 - totalCost < minRequiredProfit) {
-            emit ArbitrageFailed(borrowAsset, borrowAmount, "Insufficient profit");
             revert InsufficientProfit();
         }
 
