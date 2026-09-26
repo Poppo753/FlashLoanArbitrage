@@ -31,9 +31,9 @@ export class ExecutionEngine {
   private async initialize(): Promise<void> {
     try {
       const chainConfig = config.chains[0];
-      this.provider = new JsonRpcProvider(chainConfig.rpcUrl, {
+      this.provider = new JsonRpcProvider(chainConfig.rpcUrl, undefined, {
         staticNetwork: true,
-      } as any);
+      });
 
       const privateKey = process.env.BOT_PRIVATE_KEY || "";
       if (privateKey) {

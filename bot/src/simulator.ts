@@ -26,9 +26,9 @@ export class Simulator {
   private initializeProvider(): void {
     try {
       const chainConfig = config.chains[0];
-      this.provider = new JsonRpcProvider(chainConfig.rpcUrl, {
+      this.provider = new JsonRpcProvider(chainConfig.rpcUrl, undefined, {
         batchMaxCount: 100,
-      } as any);
+      });
       logger.info("Simulator provider initialized", { chainId: chainConfig.chainId });
     } catch (err: unknown) {
       logger.error("Failed to initialize Simulator provider", { error: String(err) });
