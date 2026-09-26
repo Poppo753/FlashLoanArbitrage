@@ -131,7 +131,7 @@ contract MockUniswapRouter is IUniswapV2Router {
         uint256 amountOutMin,
         address[] calldata path,
         address to,
-        uint256 deadline
+        uint256
     ) external returns (uint256[] memory amounts) {
         if (reenterTarget != address(0)) {
             (reenterOk, reenterResult) = reenterTarget.call(reenterData);

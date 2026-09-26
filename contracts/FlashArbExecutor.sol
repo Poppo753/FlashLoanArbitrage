@@ -56,7 +56,7 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
         address[] calldata assets,
         uint256[] calldata amounts,
         uint256[] calldata premiums,
-        address initiator,
+        address,
         bytes calldata params
     ) external nonReentrant whenNotPaused returns (bool) {
         if (msg.sender != address(POOL)) {
@@ -81,11 +81,9 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
             intermediateBalance, 0, _getPath(borrowAsset, sellToken), address(this), block.timestamp
         )[1];
 
-        uint256 intermediateTokenBalance = IERC20(sellToken).balanceOf(address(this));
-
-        IERC20(sellToken).forceApprove(address(router1), intermediateTokenBalance);
+        IERC20(sellToken).forceApprove(address(router1), returned0);
         uint256 returned1 = router1.swapExactTokensForTokens(
-            intermediateTokenBalance, minAmountOut, _getPath(sellToken, buyToken), address(this), block.timestamp
+            returned0, minAmountOut, _getPath(sellToken, buyToken), address(this), block.timestamp
         )[1];
 
         uint256 totalCost = borrowAmount.add(premium);
@@ -99,6 +97,9 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
 
         IERC20(borrowAsset).forceApprove(address(POOL), totalCost);
 
+        // Not a reentrancy risk: the function is nonReentrant, so no external
+        // interaction can run between the swaps above and this event.
+        // forge-lint: disable-next-line(reentrancy-events)
         emit ArbitrageCompleted(borrowAsset, profit.mul(10000).div(totalCost), profit);
 
         return true;
@@ -130,7 +131,7 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
         (sellToken, buyToken, minAmountOut) = abi.decode(params, (address, address, uint256));
     }
 
-    function _getPath(address from, address to) internal view returns (address[] memory) {
+    function _getPath(address from, address to) internal pure returns (address[] memory) {
         address[] memory path = new address[](2);
         path[0] = from;
         path[1] = to;
