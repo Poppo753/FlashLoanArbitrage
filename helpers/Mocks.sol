@@ -4,7 +4,6 @@ pragma solidity ^0.8.20;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IUniswapV2Router} from "../contracts/interfaces/IUniswapV2Router.sol";
-import {IFlashLoanSimpleReceiver} from "../contracts/interfaces/IAaveFlashLoanReceiver.sol";
 
 contract MockERC20 {
     string public name;
@@ -172,80 +171,4 @@ contract MockUniswapRouter is IUniswapV2Router {
         require(reserves[tokenIn] > 0 && reserves[tokenOut] > 0, "Insufficient reserves");
         amounts[1] = amountIn * multiplier / 100;
     }
-}
-
-contract MockFlashLoanReceiver is IFlashLoanSimpleReceiver {
-    using SafeERC20 for IERC20;
-
-    address public executor;
-    address public pool;
-    bool public executed;
-    uint256 public lastProfit;
-
-    constructor(address _executor, address _pool) {
-        executor = _executor;
-        pool = _pool;
-    }
-
-    function executeOperation(
-        address[] calldata assets,
-        uint256[] calldata amounts,
-        uint256[] calldata premiums,
-        address initiator,
-        bytes calldata params
-    ) external returns (bool) {
-        executed = true;
-        require(msg.sender == pool, "Only pool");
-
-        address borrowAsset = assets[0];
-        uint256 borrowAmount = amounts[0];
-        uint256 premium = premiums[0];
-
-        (address sellToken, address buyToken, uint256 minAmountOut) = _decodeParams(params);
-
-        uint256 intermediateBalance = IERC20(borrowAsset).balanceOf(address(this));
-        IERC20(borrowAsset).forceApprove(executor, intermediateBalance);
-
-        uint256 returned0 = IUniswapV2Router(payable(executor)).swapExactTokensForTokens(
-            intermediateBalance,
-            0,
-            _getPath(borrowAsset, sellToken),
-            address(this),
-            block.timestamp
-        )[1];
-
-        uint256 intermediateTokenBalance = IERC20(sellToken).balanceOf(address(this));
-        IERC20(sellToken).forceApprove(executor, intermediateTokenBalance);
-
-        uint256 returned1 = IUniswapV2Router(payable(executor)).swapExactTokensForTokens(
-            intermediateTokenBalance,
-            minAmountOut,
-            _getPath(sellToken, buyToken),
-            address(this),
-            block.timestamp
-        )[1];
-
-        uint256 totalCost = borrowAmount + premium;
-        lastProfit = returned1 - totalCost;
-
-        IERC20(borrowAsset).forceApprove(pool, totalCost);
-        return true;
-    }
-
-    function _decodeParams(bytes calldata params)
-        internal pure
-        returns (address sellToken, address buyToken, uint256 minAmountOut)
-    {
-        require(params.length == 96, "Invalid params length");
-        (sellToken, buyToken, minAmountOut) = abi.decode(params, (address, address, uint256));
-    }
-
-    function _getPath(address from, address to) internal pure returns (address[] memory) {
-        address[] memory path = new address[](2);
-        path[0] = from;
-        path[1] = to;
-        return path;
-    }
-
-    receive() external payable {}
 }
