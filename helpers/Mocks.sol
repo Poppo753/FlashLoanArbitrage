@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IERC20} from "../../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "../../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IUniswapV2Router} from "../contracts/interfaces/IUniswapV2Router.sol";
 import {IFlashLoanSimpleReceiver} from "../contracts/interfaces/IAaveFlashLoanReceiver.sol";
 
@@ -252,11 +252,7 @@ contract MockFlashLoanReceiver is IFlashLoanSimpleReceiver {
         returns (address sellToken, address buyToken, uint256 minAmountOut)
     {
         require(params.length == 64, "Invalid params length");
-        assembly {
-            sellToken := mload(add(params, 32))
-            buyToken := mload(add(params, 64))
-            minAmountOut := mload(add(params, 96))
-        }
+        (sellToken, buyToken, minAmountOut) = abi.decode(params, (address, address, uint256));
     }
 
     function _getPath(address from, address to) internal pure returns (address[] memory) {

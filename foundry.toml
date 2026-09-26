@@ -1,3 +1,5 @@
+[profile]
+default = { libs = ["node_modules", "lib"] }
 [profile.foundry]
 src = ["contracts", "test", "helpers"]
 out = "out"

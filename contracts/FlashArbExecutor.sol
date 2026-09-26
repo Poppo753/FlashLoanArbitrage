@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IPool} from "../../lib/aave-v3-core/contracts/interfaces/IPool.sol";
+import {IPool} from "aave-v3-core/contracts/interfaces/IPool.sol";
 import {IFlashLoanSimpleReceiver} from "./interfaces/IAaveFlashLoanReceiver.sol";
 import {IUniswapV2Router} from "./interfaces/IUniswapV2Router.sol";
-import {SafeERC20, IERC20} from "../../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ReentrancyGuard} from "../../lib/openzeppelin-contracts/contracts/security/ReentrancyGuard.sol";
-import {Ownable} from "../../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
+import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {SafeMathLib} from "./libraries/SafeMathLib.sol";
 
 contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
@@ -18,7 +18,6 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
     event ArbitrageFailed(address indexed borrowAsset, uint256 amount, string reason);
 
     IPool public immutable POOL;
-    address public immutable owner;
     uint256 public minProfitBps;
     bool public paused;
 
@@ -32,11 +31,11 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
 
     constructor(
         address poolAddress,
-        address _owner,
+        address admin,
         uint256 _minProfitBps,
         address router0Address,
         address router1Address
-    ) Ownable(_owner) {
+    ) Ownable(admin) {
         POOL = IPool(poolAddress);
         minProfitBps = _minProfitBps;
         router0 = IUniswapV2Router(router0Address);
@@ -55,7 +54,7 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
         uint256[] memory amounts = new uint256[](1);
         amounts[0] = amount;
 
-        POOL.flashLoan(address(this), assets, amounts, params);
+        POOL.flashLoan(address(this), assets, amounts, new uint256[](1), address(this), params, 0);
     }
 
     function executeOperation(
@@ -123,11 +122,11 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
     }
 
     function withdrawToken(address token) external onlyOwner {
-        IERC20(token).safeTransfer(owner, IERC20(token).balanceOf(address(this)));
+        IERC20(token).safeTransfer(owner(), IERC20(token).balanceOf(address(this)));
     }
 
     function withdrawETH() external onlyOwner {
-        payable(owner).transfer(address(this).balance);
+        payable(owner()).transfer(address(this).balance);
     }
 
     function _decodeParams(bytes calldata params)
@@ -135,11 +134,7 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
         returns (address sellToken, address buyToken, uint256 minAmountOut)
     {
         require(params.length == 64, "Invalid params length");
-        assembly {
-            sellToken := mload(add(params, 32))
-            buyToken := mload(add(params, 64))
-            minAmountOut := mload(add(params, 96))
-        }
+        (sellToken, buyToken, minAmountOut) = abi.decode(params, (address, address, uint256));
     }
 
     function _getPath(address from, address to) internal view returns (address[] memory) {

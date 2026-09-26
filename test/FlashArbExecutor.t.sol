@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "../../lib/forge-std/src/Test.sol";
+import "forge-std/Test.sol";
 import "../contracts/FlashArbExecutor.sol";
 import "../contracts/interfaces/IUniswapV2Router.sol";
 import "../helpers/Mocks.sol";
@@ -22,8 +22,8 @@ contract FlashArbExecutorTest is Test {
 
     function setUp() public {
         owner = address(this);
-        attacker = address(0x133700000000000000000000000000000001);
-        vm.deal(attacker, 100 ether);
+        attackerAddr = address(0x133700000000000000000000000000000001);
+        vm.deal(attackerAddr, 100 ether);
 
         pool = new MockAavePool();
         tokenA = new MockERC20("TokenA", "TKA", 18, 1_000_000 * 1e18);
@@ -94,12 +94,12 @@ contract FlashArbExecutorTest is Test {
         bytes memory params = _buildParams(address(tokenB), address(tokenC), 0);
 
         vm.prank(address(pool));
-        vm.expectRevert(FlashArbExecutor.InsufficientProfit.selector);
+        vm.expectRevert(InsufficientProfit.selector);
         executor.executeOperation(assets, amounts, premiums, address(this), params);
     }
 
     function test_OnlyPool_Caller() public {
-        vm.expectRevert(FlashArbExecutor.OnlyPoolCaller.selector);
+        vm.expectRevert(OnlyPoolCaller.selector);
         executor.executeOperation(
             new address[](1),
             new uint256[](1),
@@ -110,7 +110,7 @@ contract FlashArbExecutorTest is Test {
     }
 
     function test_OnlyOwner_Caller() public {
-        vm.prank(attacker);
+        vm.prank(attackerAddr);
         vm.expectRevert();
         executor.executeArbitrage(
             address(tokenA),
@@ -151,7 +151,7 @@ contract FlashArbExecutorTest is Test {
     function test_WithdrawToken_OwnerOnly() public {
         tokenA.mint(address(executor), 1000 * 1e18);
 
-        vm.prank(attacker);
+        vm.prank(attackerAddr);
         vm.expectRevert();
         executor.withdrawToken(address(tokenA));
 
@@ -164,7 +164,7 @@ contract FlashArbExecutorTest is Test {
         payable(address(executor)).transfer(1 ether);
         assertEq(address(executor).balance, 1 ether);
 
-        vm.prank(attacker);
+        vm.prank(attackerAddr);
         vm.expectRevert();
         executor.withdrawETH();
 
@@ -235,7 +235,7 @@ contract FlashArbExecutorTest is Test {
     }
 
     function test_Pause_Unpause_OwnerOnly() public {
-        vm.prank(attacker);
+        vm.prank(attackerAddr);
         vm.expectRevert();
         executor.pause();
 
@@ -243,7 +243,7 @@ contract FlashArbExecutorTest is Test {
         executor.pause();
         assertTrue(executor.paused());
 
-        vm.prank(attacker);
+        vm.prank(attackerAddr);
         vm.expectRevert();
         executor.unpause();
 
@@ -270,7 +270,7 @@ contract ReentrancyAttacker {
         uint256[] memory _premiums,
         bytes memory _params
     ) {
-        executor = FlashArbExecutor(_executor);
+        executor = FlashArbExecutor(payable(_executor));
         pool = MockAavePool(_pool);
         assets = _assets;
         amounts = _amounts;
