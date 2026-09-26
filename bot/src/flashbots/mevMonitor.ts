@@ -4,6 +4,26 @@ import { logger, info, warn } from "../logger";
 import { BiddingStrategy } from "./biddingStrategy";
 import { FlashbotsBundlePayload, bundleBuilder } from "./bundleBuilder";
 
+const UNISWAP_V2_ROUTER_IFACE = new ethers.Interface([
+  "function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline)",
+  "function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, address[] path, address to, uint256 deadline)",
+  "function swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline) payable",
+  "function swapETHForExactTokens(uint256 amountOut, address[] path, address to, uint256 deadline) payable",
+  "function swapExactTokensForETH(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline)",
+  "function swapTokensForExactETH(uint256 amountOut, uint256 amountInMax, address[] path, address to, uint256 deadline)",
+  "function swapExactTokensForTokensSupportingFeeOnTransferTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline)",
+  "function swapExactETHForTokensSupportingFeeOnTransferTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline) payable",
+  "function swapExactTokensForETHSupportingFeeOnTransferTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline)",
+]);
+
+const UNISWAP_V2_INIT_CODE_HASH =
+  "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f";
+
+interface DecodedRouterCall {
+  name: string;
+  args: ethers.Result;
+}
+
 export interface MEVTarget {
   hash: string;
   to: string;
@@ -145,16 +165,20 @@ export class MEVMonitor {
       const isUniswapSwap: boolean =
         Boolean(tx.to && tx.to.toLowerCase() === uniswapV2Router);
 
-      const estimatedAmountIn = isUniswapSwap
-        ? this.extractInputAmount(tx.data)
+      const decoded = isUniswapSwap ? this.decodeRouterCall(tx.data || "0x") : null;
+
+      const estimatedAmountIn = decoded
+        ? this.extractInputAmount(decoded, tx.value || BigInt(0))
         : BigInt(0);
-      const estimatedAmountOut = isUniswapSwap
-        ? this.extractOutputAmount(tx.data)
+      const estimatedAmountOut = decoded
+        ? this.extractOutputAmount(decoded)
         : BigInt(0);
 
-      const poolAddress = isUniswapSwap
-        ? this.getPairAddress(tx.from || "", tx.to || "")
-        : undefined;
+      const path = decoded ? this.extractPath(decoded) : undefined;
+      const tokenIn = path && path.length > 0 ? path[0] : undefined;
+      const tokenOut = path && path.length > 0 ? path[path.length - 1] : undefined;
+      const poolAddress =
+        tokenIn && tokenOut ? this.getPairAddress(tokenIn, tokenOut) : undefined;
 
       const target: MEVTarget = {
         hash: tx.hash || ethers.keccak256(ethers.toUtf8Bytes(tx.hash || "0x")),
@@ -168,6 +192,8 @@ export class MEVMonitor {
         estimatedAmountIn,
         estimatedAmountOut,
         poolAddress,
+        tokenIn,
+        tokenOut,
       };
 
       logger.debug("MEV target analyzed", {
@@ -357,36 +383,104 @@ export class MEVMonitor {
     return "0x";
   }
 
-  private getPairAddress(from: string, to: string): string {
+  private decodeRouterCall(data: string): DecodedRouterCall | null {
+    if (!data || data.length < 10) return null;
     try {
-      return ethers.getAddress(
-        ethers.keccak256(
-          ethers.solidityPacked(
-            ["address", "address"],
-            [from || ethers.ZeroAddress, to || ethers.ZeroAddress]
-          )
-        )
-      );
+      const parsed = UNISWAP_V2_ROUTER_IFACE.parseTransaction({ data });
+      if (!parsed) return null;
+      return { name: parsed.name, args: parsed.args };
     } catch {
-      return ethers.ZeroAddress;
+      return null;
     }
   }
 
-  private extractInputAmount(data: string): bigint {
-    if (data.length < 10) return BigInt(0);
+  private extractPath(call: DecodedRouterCall): string[] | undefined {
     try {
-      const amountHex = "0x" + data.slice(10, 74);
-      return BigInt(amountHex);
+      const path = call.args.path;
+      if (Array.isArray(path) && path.length > 0) {
+        return path.map((token: unknown) => String(token));
+      }
+      return undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private getPairAddress(tokenA: string, tokenB: string): string | undefined {
+    try {
+      const factory = config.chains[0].uniswapV2Factory;
+      if (!factory || factory === ethers.ZeroAddress) {
+        logger.warn(
+          "Uniswap V2 factory address not configured; cannot derive pair address"
+        );
+        return undefined;
+      }
+      const tokenAHex = tokenA.toLowerCase();
+      const tokenBHex = tokenB.toLowerCase();
+      if (tokenAHex === tokenBHex) {
+        return undefined;
+      }
+      const [token0, token1] =
+        BigInt(tokenAHex) <= BigInt(tokenBHex)
+          ? [tokenAHex, tokenBHex]
+          : [tokenBHex, tokenAHex];
+      const salt = ethers.keccak256(
+        ethers.solidityPacked(["address", "address"], [token0, token1])
+      );
+      const pairAddress = ethers.keccak256(
+        ethers.concat([
+          "0xff",
+          ethers.getAddress(factory),
+          salt,
+          UNISWAP_V2_INIT_CODE_HASH,
+        ])
+      );
+      return ethers.getAddress(ethers.dataSlice(pairAddress, 12, 32));
+    } catch {
+      return undefined;
+    }
+  }
+
+  private extractInputAmount(call: DecodedRouterCall, value: bigint): bigint {
+    try {
+      switch (call.name) {
+        case "swapExactTokensForTokens":
+        case "swapExactTokensForETH":
+        case "swapExactTokensForTokensSupportingFeeOnTransferTokens":
+        case "swapExactTokensForETHSupportingFeeOnTransferTokens":
+          return BigInt(call.args.amountIn ?? 0);
+        case "swapTokensForExactTokens":
+        case "swapTokensForExactETH":
+          return BigInt(call.args.amountInMax ?? 0);
+        case "swapExactETHForTokens":
+        case "swapETHForExactTokens":
+        case "swapExactETHForTokensSupportingFeeOnTransferTokens":
+          return BigInt(value);
+        default:
+          return BigInt(0);
+      }
     } catch {
       return BigInt(0);
     }
   }
 
-  private extractOutputAmount(data: string): bigint {
-    if (data.length < 74) return BigInt(0);
+  private extractOutputAmount(call: DecodedRouterCall): bigint {
     try {
-      const amountHex = "0x" + data.slice(74, 138);
-      return BigInt(amountHex);
+      switch (call.name) {
+        case "swapExactTokensForTokens":
+        case "swapExactTokensForETH":
+        case "swapExactETHForTokens":
+        case "swapExactTokensForTokensSupportingFeeOnTransferTokens":
+        case "swapExactTokensForETHSupportingFeeOnTransferTokens":
+        case "swapExactETHForTokensSupportingFeeOnTransferTokens":
+          return BigInt(call.args.amountOutMin ?? 0);
+        case "swapTokensForExactTokens":
+        case "swapTokensForExactETH":
+        case "swapETHForExactTokens":
+          return BigInt(call.args.amountOut ?? 0);
+        default:
+          return BigInt(0);
+      }
     } catch {
       return BigInt(0);
     }
