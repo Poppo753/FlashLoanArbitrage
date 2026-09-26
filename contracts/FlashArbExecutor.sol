@@ -41,7 +41,11 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
         router1 = IUniswapV2Router(router1Address);
     }
 
-    function executeArbitrage(address borrowAsset, uint256 amount, bytes calldata params) external onlyOwner {
+    function executeArbitrage(address borrowAsset, uint256 amount, bytes calldata params)
+        external
+        onlyOwner
+        whenNotPaused
+    {
         emit ArbitrageStarted(borrowAsset, amount, keccak256(params));
 
         address[] memory assets = new address[](1);

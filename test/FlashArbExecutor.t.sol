@@ -161,8 +161,7 @@ contract FlashArbExecutorTest is Test {
 
         assertFalse(router0.reenterOk());
         assertEq(
-            keccak256(router0.reenterResult()),
-            keccak256(abi.encodeWithSignature("ReentrancyGuardReentrantCall()"))
+            keccak256(router0.reenterResult()), keccak256(abi.encodeWithSignature("ReentrancyGuardReentrantCall()"))
         );
     }
 
@@ -284,6 +283,15 @@ contract FlashArbExecutorTest is Test {
         vm.prank(owner);
         executor.unpause();
         assertFalse(executor.paused());
+    }
+
+    function test_ExecuteArbitrage_Paused_Reverts() public {
+        vm.prank(owner);
+        executor.pause();
+
+        vm.prank(owner);
+        vm.expectRevert("Paused");
+        executor.executeArbitrage(address(tokenA), AMOUNT, _buildParams(address(tokenB), address(tokenA), 0));
     }
 }
 
