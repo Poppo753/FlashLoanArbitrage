@@ -38,7 +38,11 @@ export class ExecutionEngine {
       const privateKey = process.env.BOT_PRIVATE_KEY || "";
       if (privateKey) {
         this.wallet = new Wallet(privateKey, this.provider);
-        this.provider.getTransactionCount(this.wallet.address);
+        try {
+          await this.provider.getTransactionCount(this.wallet.address);
+        } catch (err: unknown) {
+          logger.warn("Nonce warm-up failed (non-fatal)", { error: String(err) });
+        }
       }
 
       this.isFlashbots = process.env.USE_FLASHBOTS !== "false";
