@@ -5,6 +5,10 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IUniswapV2Router} from "../contracts/interfaces/IUniswapV2Router.sol";
 
+/**
+ * @title MockERC20
+ * @notice Freely mintable ERC20 with configurable decimals, for local tests.
+ */
 contract MockERC20 {
     string public name;
     string public symbol;
@@ -48,60 +52,16 @@ contract MockERC20 {
     }
 }
 
-contract MockAavePool {
-    using SafeERC20 for IERC20;
-
-    address public owner;
-    uint256 public flashLoanFee = 50;
-
-    mapping(address => uint256) public balances;
-
-    constructor() {
-        owner = msg.sender;
-    }
-
-    function flashLoan(
-        address receiver,
-        address[] calldata assets,
-        uint256[] calldata amounts,
-        uint256[] calldata, // interestRateModes (unused, mode 0 only)
-        address, // onBehalfOf (unused)
-        bytes calldata params,
-        uint16 // referralCode (unused)
-    ) external {
-        require(balances[assets[0]] >= amounts[0], "Insufficient liquidity");
-        balances[assets[0]] -= amounts[0];
-        IERC20(assets[0]).safeTransfer(receiver, amounts[0]);
-
-        uint256[] memory premiums = new uint256[](amounts.length);
-        for (uint256 i = 0; i < amounts.length; i++) {
-            premiums[i] = amounts[i] * flashLoanFee / 10000;
-        }
-
-        (bool success, ) = receiver.call(
-            abi.encodeWithSignature(
-                "executeOperation(address[],uint256[],uint256[],address,bytes)",
-                assets, amounts, premiums, address(this), params
-            )
-        );
-        require(success, "Flash loan execution failed");
-
-        IERC20(assets[0]).safeTransferFrom(receiver, address(this), amounts[0] + premiums[0]);
-        balances[assets[0]] += amounts[0] + premiums[0];
-    }
-
-    function deposit(address token, uint256 amount) external {
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
-        balances[token] += amount;
-    }
-
-    function withdraw(address token, uint256 amount) external {
-        require(balances[token] >= amount, "Insufficient balance");
-        balances[token] -= amount;
-        IERC20(token).safeTransfer(msg.sender, amount);
-    }
-}
-
+/**
+ * @title MockUniswapRouter
+ * @notice Legacy V2-style router mock kept for the minimal `IUniswapV2Router`
+ *         surface. The arbitrage plugin uses `IUniswapV2Router02`; see
+ *         `ArbMocks.sol` for the router mock that matches it.
+ * @dev Pricing is a flat `multiplier` so a test can make one venue cheaper
+ *      than another. Retains the reentrancy hook used by the old Aave test
+ *      suite, so the same adversarial pattern can be reused against the new
+ *      plugin.
+ */
 contract MockUniswapRouter is IUniswapV2Router {
     using SafeERC20 for IERC20;
 
