@@ -195,6 +195,20 @@ contract FlashArbExecutorTest is Test {
         assertEq(address(executor).balance, 0);
     }
 
+    function test_WithdrawETH_SupportsContractOwner() public {
+        GasHogOwner hog = new GasHogOwner();
+        FlashArbExecutor hogExecutor = new FlashArbExecutor(
+            address(pool), address(hog), Constants.MIN_PROFIT_BPS, address(router0), address(router1)
+        );
+        payable(address(hogExecutor)).transfer(1 ether);
+
+        hog.withdraw(hogExecutor);
+
+        assertEq(address(hogExecutor).balance, 0);
+        assertEq(address(hog).balance, 1 ether);
+        assertEq(hog.withdrawals(), 1);
+    }
+
     function test_FlashLoanRepayment_Exact() public {
         _setupProfitableFlashLoan();
         pool.deposit(address(tokenA), AMOUNT);
@@ -270,5 +284,17 @@ contract FlashArbExecutorTest is Test {
         vm.prank(owner);
         executor.unpause();
         assertFalse(executor.paused());
+    }
+}
+
+contract GasHogOwner {
+    uint256 public withdrawals;
+
+    function withdraw(FlashArbExecutor executor) external {
+        executor.withdrawETH();
+    }
+
+    receive() external payable {
+        withdrawals += 1;
     }
 }

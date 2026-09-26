@@ -120,7 +120,8 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
     }
 
     function withdrawETH() external onlyOwner {
-        payable(owner()).transfer(address(this).balance);
+        (bool success,) = payable(owner()).call{value: address(this).balance}("");
+        require(success, "ETH transfer failed");
     }
 
     function _decodeParams(bytes calldata params)
