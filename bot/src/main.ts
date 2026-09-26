@@ -65,7 +65,10 @@ async function startMonitoring(): Promise<void> {
           const simResult = await simulator.simulateFlashLoan(
             config.chains[0].aaveLendingPool,
             opp.tokens.slice(0, -1),
-            [loanSize]
+            [loanSize],
+            undefined,
+            opp.tokens,
+            reserves
           );
 
           if (simResult.success && simResult.netProfitEstimate?.isProfitable) {

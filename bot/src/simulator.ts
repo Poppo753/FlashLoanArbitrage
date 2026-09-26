@@ -1,7 +1,8 @@
 import { ethers, JsonRpcProvider, Contract, formatEther } from "ethers";
 import { config } from "./config";
 import { logger } from "./logger";
-import { ProfitResult } from "./profitCalculator";
+import { ProfitCalculator, ProfitResult } from "./profitCalculator";
+import { ReserveData } from "./poolMonitor";
 
 export interface SimulationResult {
   success: boolean;
@@ -40,7 +41,9 @@ export class Simulator {
     flashLoanContract: string,
     assets: string[],
     amounts: bigint[],
-    _flashLoanABI: string[] = this.flashLoanABI
+    _flashLoanABI: string[] = this.flashLoanABI,
+    path?: string[],
+    reserves?: Map<string, ReserveData>
   ): Promise<SimulationResult> {
     try {
       const feeData = await this.getFeeData();
@@ -72,7 +75,7 @@ export class Simulator {
         gasEstimate,
         baseFee,
         maxFee,
-        netProfitEstimate: null,
+        netProfitEstimate: success ? this.buildNetProfitEstimate(amounts, path, reserves) : null,
       };
 
       logger.info("Flash loan simulation complete", {
@@ -162,6 +165,32 @@ export class Simulator {
       ...simResult,
       netProfitEstimate: netProfit,
     };
+  }
+
+  private buildNetProfitEstimate(
+    amounts: bigint[],
+    path?: string[],
+    reserves?: Map<string, ReserveData>
+  ): ProfitResult | null {
+    if (!path || !reserves || amounts.length === 0) {
+      return null;
+    }
+    try {
+      const loanSize = amounts[0];
+      const profit = new ProfitCalculator().calculate(path, reserves, loanSize);
+      const premium = (loanSize * BigInt(config.flashLoanPremiumBps)) / BigInt(10000);
+      logger.debug("Simulation net profit estimate", {
+        loanSize: loanSize.toString(),
+        simulatedOutput: profit.effectiveAmountOut.toString(),
+        premium: premium.toString(),
+        netProfitWei: profit.netProfitWei.toString(),
+        isProfitable: profit.isProfitable,
+      });
+      return profit;
+    } catch (err: unknown) {
+      logger.warn("Failed to build simulation profit estimate", { error: String(err) });
+      return null;
+    }
   }
 
   private decodeCallSuccess(callResult: string): boolean {
