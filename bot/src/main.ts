@@ -55,7 +55,12 @@ async function initializeBot(): Promise<void> {
 
 async function startMonitoring(): Promise<void> {
   try {
-    const tokens = config.chains.flatMap((c) => [c.wethAddress]);
+    // TODO(B17): config only exposes one token per chain (WETH), and execution
+    // always runs on config.chains[0], so a cross-chain token universe could
+    // never execute. A per-chain token list (e.g. ETHEREUM_TOKENS) must be
+    // added to config.ts to widen the single-chain universe; until then only
+    // the primary chain WETH is scanned.
+    const tokens = [config.chains[0].wethAddress];
     const opportunities = await opportunityDetector.detectAllOpportunities(tokens);
 
     if (opportunities.length > 0) {
