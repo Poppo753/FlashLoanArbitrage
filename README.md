@@ -1,82 +1,82 @@
 # Flash Loan Arbitrage Bot
 
-A high-performance Flash Loan Arbitrage bot built on Ethereum, leveraging Foundry for smart contract development, Aave for flash loans, and MEV-Boost for block building.
+A flash-loan arbitrage project built on Ethereum: Foundry smart contracts (Aave V3 flash loans, Uniswap V2-style routers) plus a TypeScript off-chain bot that can submit opportunities via Flashbots.
 
-## Architecture Overview
+## Architecture
 
-The bot consists of three core modules:
+Three modules:
 
-- **Contracts** — Solidity smart contracts that execute the flash loan logic, arbitrage settlement, and profit verification. Interfaces define integrations with Aave, Uniswap V3, and Balancer.
-- **Bot** — A Python/TypeScript off-chain service that monitors the mempool, identifies arbitrage opportunities, and submits transactions via Flashbots.
-- **Scripts & Deploy** — Foundry scripts for deploying contracts to mainnet/testnets and configuring the bot.
+- **Contracts** — `FlashArbExecutor.sol` executes flash-loan arbitrage: borrows a single asset from Aave V3, swaps it through two routers (borrow -> intermediate -> borrow), verifies minimum profit, repays and retains the profit. Access control via OpenZeppelin `Ownable`, reentrancy-guarded callback, owner circuit breaker (`pause`/`unpause`).
+- **Bot** (`bot/src/`) — TypeScript service: monitors pools, detects opportunities, simulates and (when wired) executes transactions; includes a Flashbots module (`bot/src/flashbots/`).
+- **Scripts** — `script/Deploy.s.sol` deploys the executor, fully parameterized via environment variables.
 
 ```
-contracts/          # Core arbitrage smart contracts
-  interfaces/       # External protocol interfaces (Aave, DEXs)
-  libs/             # Shared libraries (SafeMath, Math)
-bot/src/            # Off-chain bot service
-script/             # Execution scripts (arbitrage, liquidation)
-test/               # Foundry tests
-  helpers/          # Test utilities and fixtures
-deploy/             # Deployment scripts and configuration
-docs/               # Documentation
+contracts/           # FlashArbExecutor + interfaces (Aave, Uniswap V2 router) + libraries/
+helpers/             # Test helpers (mocks, constants)
+script/              # Deploy script (env-driven)
+test/                # Foundry tests (14 tests)
+bot/src/             # Off-chain bot service (TypeScript)
+bot/src/flashbots/   # Flashbots bundle/monitoring module
+Docs/V1/             # Original design documents
+Docs/AUDIT_LOG.md    # Audit log: findings, fixes, dates (updated every fix)
 ```
 
 ## Quick Start
 
 ### Prerequisites
 
-- Foundry installed ([foundry.book.sh](https://book.getfoundry.sh))
-- Node.js 18+
-- Docker (optional, for local development)
+- Foundry ([book.getfoundry.sh](https://book.getfoundry.sh))
+- Node.js 18+ (for the bot)
 
-### Setup
+### Contracts
 
-1. Clone the repository and navigate to the project directory:
-   ```bash
-   cd D:\Documents\Projects\FlashLoanArbitrage
-   ```
-
-2. Copy the environment file and fill in your values:
-   ```bash
-   cp .env.example .env
-   ```
-
-3. Install dependencies and build:
+1. Install dependencies and build:
    ```bash
    forge install
    forge build
    ```
 
-4. Run tests:
+2. Run tests:
    ```bash
-   forge test --verbose
+   forge test -vv
    ```
 
-5. Deploy to a local network:
+3. Deploy (all values are required, see `.env.example`):
    ```bash
-   cast --rpc-url localhost --private-key $PRIVATE_KEY create $DEPLOYED_BYTECODE
+   cp .env.example .env   # fill in OWNER_ADDRESS, AAVE_POOL_ADDRESS, ROUTER_0_ADDRESS, ROUTER_1_ADDRESS, MIN_PROFIT_BPS
    forge script script/Deploy.s.sol --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast --verify
    ```
 
-### Development
+### Bot
 
-- **Tests**: Write tests in `test/` using Foundry's testing framework.
-- **Contracts**: Solidity source files go in `contracts/`.
-- **Bot**: The bot service runs from `bot/src/` and connects to the RPC endpoint.
+```bash
+cd bot
+cp .env.example .env   # bot has its own environment file
+npm install
+npm run build
+npm start
+```
 
 ## Configuration
 
-| Variable               | Description                              |
-|------------------------|------------------------------------------|
-| `PRIVATE_KEY`          | Wallet private key for transaction signing |
-| `RPC_URL`              | Ethereum RPC endpoint                    |
-| `FLASHBOTS_SECRET`     | Flashbots MEV relay secret               |
-| `ETHERSCAN_API_KEY`    | Etherscan API key for verification       |
-| `ALCHEMY_API_KEY`      | Alchemy API key for enhanced RPC         |
-| `MIN_PROFIT_BPS`       | Minimum profit threshold in basis points |
-| `OWNER_ADDRESS`        | Bot owner address for governance         |
-| `AAVE_POOL_ADDRESS`    | Aave V3 Pool contract address            |
+Root `.env` (contracts / deploy):
+
+| Variable              | Description                                  |
+|-----------------------|----------------------------------------------|
+| `PRIVATE_KEY`         | Deployer key for `forge script --broadcast`  |
+| `RPC_URL`             | HTTPS RPC endpoint                           |
+| `ETHERSCAN_API_KEY`   | Contract verification                        |
+| `MIN_PROFIT_BPS`      | Minimum profit threshold in basis points     |
+| `OWNER_ADDRESS`       | Executor owner (admin) address               |
+| `AAVE_POOL_ADDRESS`   | Aave V3 Pool address                         |
+| `ROUTER_0_ADDRESS`    | First router address                         |
+| `ROUTER_1_ADDRESS`    | Second router address                        |
+
+The bot uses its own `bot/.env.example` (RPC/WebSocket endpoints, thresholds, Flashbots, database).
+
+## Audit
+
+Findings and fixes are tracked in [`Docs/AUDIT_LOG.md`](Docs/AUDIT_LOG.md), one dated entry per fix.
 
 ## License
 
