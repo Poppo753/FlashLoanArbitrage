@@ -1,4 +1,4 @@
-import { poolMonitor, PoolMonitor, ReserveData } from "./poolMonitor";
+import { poolMonitor, PoolMonitor, ReserveData, pairKey, orientReserve } from "./poolMonitor";
 import { config } from "./config";
 import { logger } from "./logger";
 
@@ -28,10 +28,10 @@ export class OpportunityDetector {
   }
 
   async checkTwoWayArbitrage(tokenA: string, tokenB: string): Promise<ArbitragePath | null> {
-    const reserveAB = this.poolMonitor.getReserve(tokenA);
-    const reserveBA = this.poolMonitor.getReserve(tokenB);
+    const poolAB = this.poolMonitor.getReserveForPair(tokenA, tokenB);
+    const poolBA = this.poolMonitor.getReserveForPair(tokenB, tokenA);
 
-    if (!reserveAB || !reserveBA) {
+    if (!poolAB || !poolBA) {
       this.logger.debug("Missing reserves for two-way arbitrage", {
         tokenA,
         tokenB,
@@ -39,10 +39,19 @@ export class OpportunityDetector {
       return null;
     }
 
+    if (poolAB.pairAddress.toLowerCase() === poolBA.pairAddress.toLowerCase()) {
+      this.logger.debug("Two-way arbitrage requires two distinct pools", {
+        tokenA,
+        tokenB,
+        pair: poolAB.pairAddress,
+      });
+      return null;
+    }
+
     const amountIn = this.WEI_MULTIPLIER / BigInt(10);
 
-    const amountOutAB = this.getAmountOut(amountIn, reserveAB.reserveIn, reserveAB.reserveOut);
-    const amountOutBA = this.getAmountOut(amountOutAB, reserveBA.reserveIn, reserveBA.reserveOut);
+    const amountOutAB = this.getAmountOut(amountIn, poolAB.reserveIn, poolAB.reserveOut);
+    const amountOutBA = this.getAmountOut(amountOutAB, poolBA.reserveIn, poolBA.reserveOut);
 
     const profitWei = amountOutBA - amountIn;
 
@@ -58,7 +67,7 @@ export class OpportunityDetector {
 
     return {
       tokens: [tokenA, tokenB, tokenA],
-      pools: [tokenA, tokenB],
+      pools: [poolAB.pairAddress, poolBA.pairAddress],
       directions: ["exactIn", "exactIn"],
       profitWei,
       type: "two_way",
@@ -70,28 +79,24 @@ export class OpportunityDetector {
     tokenB: string,
     tokenC: string
   ): Promise<ArbitragePath | null> {
-    const reserveAB = this.poolMonitor.getReserve(tokenA + "_" + tokenB);
-    const reserveBC = this.poolMonitor.getReserve(tokenB + "_" + tokenC);
-    const reserveCA = this.poolMonitor.getReserve(tokenC + "_" + tokenA);
+    const poolAB = this.poolMonitor.getReserveForPair(tokenA, tokenB);
+    const poolBC = this.poolMonitor.getReserveForPair(tokenB, tokenC);
+    const poolCA = this.poolMonitor.getReserveForPair(tokenC, tokenA);
 
-    const reserves: Record<string, ReserveData | undefined> = {
-      [tokenA]: reserveAB,
-      [tokenB]: reserveBC,
-      [tokenC]: reserveCA,
-    };
-
-    for (const [, r] of Object.entries(reserves)) {
-      if (!r) {
-        this.logger.debug("Missing reserves for triangular arbitrage", { tokens: Object.keys(reserves) });
-        return null;
-      }
+    if (!poolAB || !poolBC || !poolCA) {
+      this.logger.debug("Missing reserves for triangular arbitrage", {
+        tokenA,
+        tokenB,
+        tokenC,
+      });
+      return null;
     }
 
     const amountIn = this.WEI_MULTIPLIER / BigInt(100);
 
-    const amountOutAB = this.getAmountOut(amountIn, reserveAB!.reserveIn, reserveAB!.reserveOut);
-    const amountOutBC = this.getAmountOut(amountOutAB, reserveBC!.reserveIn, reserveBC!.reserveOut);
-    const amountOutCA = this.getAmountOut(amountOutBC, reserveCA!.reserveIn, reserveCA!.reserveOut);
+    const amountOutAB = this.getAmountOut(amountIn, poolAB.reserveIn, poolAB.reserveOut);
+    const amountOutBC = this.getAmountOut(amountOutAB, poolBC.reserveIn, poolBC.reserveOut);
+    const amountOutCA = this.getAmountOut(amountOutBC, poolCA.reserveIn, poolCA.reserveOut);
 
     const profitWei = amountOutCA - amountIn;
 
@@ -106,7 +111,7 @@ export class OpportunityDetector {
 
     return {
       tokens: [tokenA, tokenB, tokenC, tokenA],
-      pools: [tokenA, tokenB, tokenC],
+      pools: [poolAB.pairAddress, poolBC.pairAddress, poolCA.pairAddress],
       directions: ["exactIn", "exactIn", "exactIn"],
       profitWei,
       type: "triangular",
@@ -135,10 +140,13 @@ export class OpportunityDetector {
 
         if (idxIn === -1 || idxOut === -1) continue;
 
+        const oriented = orientReserve(reserve, tokenIn, tokenOut);
+        if (!oriented) continue;
+
         const amountOut = this.getAmountOut(
           distances.get(tokenIn) || BigInt(0),
-          reserve.reserveIn,
-          reserve.reserveOut
+          oriented.reserveIn,
+          oriented.reserveOut
         );
 
         const newDist = distances.get(tokenIn) || BigInt(0);
@@ -152,10 +160,12 @@ export class OpportunityDetector {
     let negativeCycleToken: string | null = null;
     for (const [pair, reserve] of pools) {
       const [tokenIn, tokenOut] = pair.split("_");
+      const oriented = orientReserve(reserve, tokenIn, tokenOut);
+      if (!oriented) continue;
       const amountOut = this.getAmountOut(
         distances.get(tokenIn) || BigInt(0),
-        reserve.reserveIn,
-        reserve.reserveOut
+        oriented.reserveIn,
+        oriented.reserveOut
       );
       if (amountOut > (distances.get(tokenIn) || BigInt(0))) {
         negativeCycleToken = tokenOut;
@@ -231,11 +241,12 @@ export class OpportunityDetector {
     for (let i = 0; i < path.tokens.length - 1; i++) {
       const tokenIn = path.tokens[i];
       const tokenOut = path.tokens[i + 1];
-      const reserve = reserves.get(
-        i === 0 ? tokenIn + "_" + tokenOut : tokenIn
-      );
+      const stored = reserves.get(pairKey(tokenIn, tokenOut));
+      const reserve = stored ? orientReserve(stored, tokenIn, tokenOut) : null;
 
-      if (!reserve) return BigInt(0);
+      if (!reserve || reserve.reserveIn <= BigInt(0) || reserve.reserveOut <= BigInt(0)) {
+        return BigInt(0);
+      }
       amountIn = this.getAmountOut(amountIn, reserve.reserveIn, reserve.reserveOut);
     }
 

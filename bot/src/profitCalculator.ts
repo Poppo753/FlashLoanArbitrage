@@ -1,5 +1,5 @@
 import { config } from "./config";
-import { ReserveData } from "./poolMonitor";
+import { ReserveData, OrientedReserve, pairKey, orientReserve } from "./poolMonitor";
 import { logger } from "./logger";
 
 export interface ProfitResult {
@@ -95,16 +95,10 @@ export class ProfitCalculator {
     reserves: Map<string, ReserveData>,
     tokenIn: string,
     tokenOut: string
-  ): ReserveData | undefined {
-    for (const [, reserve] of reserves) {
-      if (
-        (reserve.tokenIn === tokenIn && reserve.tokenOut === tokenOut) ||
-        (reserve.tokenIn === tokenOut && reserve.tokenOut === tokenIn)
-      ) {
-        return reserve;
-      }
-    }
-    return undefined;
+  ): OrientedReserve | undefined {
+    const stored = reserves.get(pairKey(tokenIn, tokenOut));
+    if (!stored) return undefined;
+    return orientReserve(stored, tokenIn, tokenOut) ?? undefined;
   }
 
   private estimateGasCost(pathLength: number): bigint {
