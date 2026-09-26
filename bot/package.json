@@ -7,7 +7,7 @@
     "build": "tsc",
     "start": "node dist/main.js",
     "dev": "ts-node src/main.ts",
-    "lint": "eslint src/**/*.ts"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "dotenv": "^16.3.0",
