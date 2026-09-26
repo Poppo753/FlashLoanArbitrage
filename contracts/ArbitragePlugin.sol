@@ -151,6 +151,11 @@ contract ArbitragePlugin is IFlashLoanCallback, Ownable, Pausable {
     ///      `setMinProfit()` after deployment, otherwise any non-negative profit is accepted.
     uint256 public minProfit;
 
+    /// @dev True only while `onFlashLoanReceived` is executing, i.e. while a borrowed principal
+    ///      is outstanding. Blocks `withdrawToken` for that window so funds the transaction owes
+    ///      the vault can never be moved out from under it.
+    bool private _inCycle;
+
     // ==================== TYPES ====================
 
     /// @notice Payload handed to the flash loan service and echoed back into the callback.
@@ -181,6 +186,9 @@ contract ArbitragePlugin is IFlashLoanCallback, Ownable, Pausable {
     error NotFlashLoanService(address caller);
     /// @notice Loan shape differs from the single-`baseToken` request this plugin builds.
     error UnexpectedFlashLoan();
+
+    /// @notice A withdrawal was attempted while a cycle was mid-flight.
+    error CycleInProgress();
     /// @notice `callbackData` is not the exact `abi.encode(RouteData)` blob produced by `startArbitrage`.
     error InvalidCallbackData(uint256 length);
     /// @notice The route deadline has passed (stale quote / sandwich attempt).
@@ -290,8 +298,15 @@ contract ArbitragePlugin is IFlashLoanCallback, Ownable, Pausable {
      * @param amount Amount to withdraw; an excessive value reverts inside the ERC20 transfer.
      *
      * @dev Retained profits are withdrawable here; the loan itself is never custody.
+     *      Withdrawals are blocked for the duration of a cycle so that a withdrawal can never
+     *      compete with the principal this transaction still owes the flash loan service.
      */
     function withdrawToken(address token, address to, uint256 amount) external onlyOwner {
+        // Defence in depth: during `onFlashLoanReceived` the principal is only on loan from the
+        // vault, and moving it out mid-cycle would strand the repayment. The only way to reach
+        // this mid-cycle is a re-entrant call from a venue we were pointed at by the owner, so
+        // this is a trust-boundary guard, not a defence against an unprivileged attacker.
+        if (_inCycle) revert CycleInProgress();
         if (to == address(0)) revert InvalidAddress();
         IERC20(token).safeTransfer(to, amount);
     }
@@ -374,6 +389,9 @@ contract ArbitragePlugin is IFlashLoanCallback, Ownable, Pausable {
         uint256 principal = amounts[0];
         if (baseBefore < principal) revert PrincipalNotReceived(principal, baseBefore);
 
+        // From here until the repayment, a principal is outstanding and must not be moved.
+        _inCycle = true;
+
         // Leg 1: buy quoteToken, on the venue selected by the owner.
         uint256 quoteOut = route.buyOnVenueA ? _buyOnV2(principal) : _buyOnV3(principal);
 
@@ -383,6 +401,8 @@ contract ArbitragePlugin is IFlashLoanCallback, Ownable, Pausable {
         } else {
             _sellOnV2(quoteOut);
         }
+
+        _inCycle = false;
 
         uint256 baseAfter = IERC20(baseToken).balanceOf(address(this));
         uint256 required = principal + feeAmounts[0];

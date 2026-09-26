@@ -113,7 +113,7 @@ contracts/interfaces/             IFlashLoanCallback, balancer/IBalancerVault,
                                   IUniswapV2Router02, IUniswapV3Router, IUniswapV3Pool,
                                   IUniswapV3QuoterV2, IUniswapV2Factory
 script/Deploy.s.sol               plugin -> service -> initialize, env-driven
-test/ArbitragePlugin.t.sol        20 mock-based behavioural tests (fast, no network)
+test/ArbitragePlugin.t.sol        21 mock-based behavioural tests (fast, no network)
 test/fork/                        29 tests against real Arbitrum state, pinned block
 helpers/Mocks.sol                 MockERC20 used by the mock suite
 bot/src/                          TypeScript bot: pool monitor, opportunity detection,
@@ -148,7 +148,7 @@ ARBITRUM_RPC_URL=https://arb-mainnet.g.alchemy.com/v2/<KEY>
 forge test --match-path "test/ArbitragePlugin.t.sol" -vv
 ```
 
-20 tests. They run the production `ArbitragePlugin` and the production `FlashLoanService`
+21 tests. They run the production `ArbitragePlugin` and the production `FlashLoanService`
 against etched mocks: `MockBalancerVault` at the Balancer address, `MockV3Factory` at the V3
 factory address and `MockV3Pool` at the CREATE2-derived V3 pool address. This proves the
 control flow, the accounting and every guard — **and nothing about real liquidity**. The V2
@@ -314,3 +314,4 @@ connected to the contracts. Running it will not trade.
 ## License
 
 MIT
+

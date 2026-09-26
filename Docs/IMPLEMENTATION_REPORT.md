@@ -298,7 +298,7 @@ uses `BALANCER_VAULT.code.length > 0`. The code is right and the comment above i
 forge install foundry-rs/forge-std@v1.16.2 OpenZeppelin/openzeppelin-contracts@v5.7.0
 forge build
 
-# Mock suite: 20 tests, no network.
+# Mock suite: 21 tests, no network.
 forge test --match-path "test/ArbitragePlugin.t.sol" -vv
 
 # Fork suite: 29 tests. ARBITRUM_RPC_URL must be in .env (the `arbitrum` alias reads it).
@@ -392,6 +392,7 @@ Explicit list. None of these is "in progress"; none is a bug.
 
 | Item | Status |
 |---|---|
+| **V3 price impact is not modelled** | The V3 leg's `amountOutMinimum` is a `slot0` spot quote minus `maxSlippageBps`, with no price-impact term. At the pinned block the real V3 impact of the tested size is ~5 bps against a 50 bps budget, but **a trade large enough to move the V3 pool past the slippage budget will revert** — burning gas on a lost cycle rather than executing badly. The protection is `minProfit` plus choosing a `maxSlippageBps` that covers the worst impact for the intended size. A real fix means modelling impact (the V3 Quoter, or a tick-crossing estimate). |
 | **Bot execution wiring** | Not implemented. `bot/src/main.ts` still hands `executionEngine.execute` placeholder calldata (`"0x"`, audit item B6) and points it at the Balancer vault address rather than the plugin. There is no code path from the bot to `ArbitragePlugin.startArbitrage`. |
 | **V3 monitoring** | Out of scope (declared in the plan, D9). The detection universe is Uniswap V2 pairs only; the deep V3 0.05% pool is read on-chain by the contract but never monitored off-chain. |
 | **Flashbots / private order flow** | Not wired. The Flashbots module exists but `buildBackrunCalldata` is a stub and invalid bundles are now rejected rather than sent (B8); the module itself has no callers in the main loop (B24). No bundle has been submitted. |
@@ -402,6 +403,39 @@ Explicit list. None of these is "in progress"; none is a bug.
 | **C1 invariant on real state** | The retained-profit invariant is proven by `test_RetainedProfitCannotRepayALosingCycle` in the mock suite only. The fork suite shows a reverting cycle leaves the plugin empty and the vault untouched, but never pre-funds the plugin first, so the invariant is not yet demonstrated on a fork. Add a fork test that pre-funds the plugin and asserts a sub-principal cycle still reverts. |
 | **Audit-log round 2** | `Docs/AUDIT_LOG.md` still covers only round 1 (the Aave system). It has not been extended with a round for this migration. |
 | **Open audit items carried over** | C4 (`initiator` validation), B6 (real execution calldata and the bot-to-plugin path), B8 (real backrun bundles), B24 (`database.save*` / `flashbots` module unwired), D4 (Foundry install helpers tracked at the repo root). |
+| **Deploy is not atomic** | The three-step deploy (plugin → service → `initialize`) is not a single transaction. If the third step fails, both contracts exist but are unwired, and the fix is to redeploy. The owner-only, one-shot `initialize` is what makes this safe rather than dangerous: a half-deployed system cannot be pointed at an attacker. Recovering in place would need a `reinitialize`, which would reopen the trust boundary, so redeploying is the intended route. |
+
+---
+
+## 11b. Independent adversarial review
+
+An independent reviewer, given the contracts cold and asked to break them, worked through the
+profit accounting, the callback authentication, re-entrancy, pool resolution and the honesty of
+every test. Outcome:
+
+**Confirmed sound** (each attempted and failed to break): the profit accounting — the
+`baseAfter - (baseBefore - principal)` formula provably excludes pre-existing balances, and
+`baseBefore >= principal` makes the inner subtraction underflow-free; callback authentication;
+loan-shape validation; the CREATE2 pool resolution and its factory cross-check, which cannot be
+satisfied by an address an attacker deploys, because the factory returns the pool it actually
+created; Balancer's 0% fee on the real vault; the service's `nonReentrant` + `_inFlashLoan`
+double guard; absence of quote-token dust; constructor validation. The reviewer also checked 50 tests for tautology and found none: the mock suite computes its expected values from
+independent replicas of the pricing math rather than from the contract's own methods, and the
+fork suite measures real chain state.
+
+**One gap found, and fixed here.** `withdrawToken` had no cycle-awareness, so a withdrawal
+landing *inside* `onFlashLoanReceived` could move principal that the transaction still owed the
+vault. Reaching it requires a venue re-entering the plugin, and `venueA`/`venueB` are immutables
+chosen by the owner at deployment — so this is a trust-boundary hole, not something an
+unprivileged attacker can drive. It was still a hole worth closing: the plugin now tracks an
+`_inCycle` flag and rejects withdrawals with `CycleInProgress` while a principal is outstanding.
+`test_WithdrawToken_RevertsDuringACycle` drives the re-entry through the owner (so `onlyOwner`
+cannot mask the result) and asserts the exact error selector, then that the cycle still
+completes and the vault ends whole.
+
+**One design limit accepted and documented** rather than fixed: the V3 leg has no price-impact
+model (see "What is NOT done"), and the deploy is not atomic (same section). Both are recorded
+with the reason they were not changed now.
 
 ---
 
@@ -418,3 +452,4 @@ exactly the part that is not implemented, and on a 250 ms chain it is the part t
 whether any of this makes money. The fork result is evidence that the cycle is *correct and
 economically viable under a measured condition*, not evidence that the strategy is
 deployable.
+

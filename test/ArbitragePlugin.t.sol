@@ -145,6 +145,19 @@ contract MockV2Router {
         require(amounts[1] > 0, "MockV2Router: INSUFFICIENT_OUTPUT_AMOUNT");
     }
 
+    /// @dev Fires a one-shot external call in the middle of a swap, so a test can simulate a
+    ///      venue re-entering the contract under test mid-cycle. The result is recorded rather
+    ///      than bubbled: the caller decides whether the re-entrancy mattered.
+    address public reentryTarget;
+    bytes public reentryData;
+    bool public reentrySucceeded;
+    bytes public reentryReturnData;
+
+    function setReentryHook(address target, bytes calldata data) external {
+        reentryTarget = target;
+        reentryData = data;
+    }
+
     function swapExactTokensForTokens(
         uint256 amountIn,
         uint256 amountOutMin,
@@ -153,6 +166,12 @@ contract MockV2Router {
         uint256 deadline
     ) external returns (uint256[] memory amounts) {
         require(block.timestamp <= deadline, "MockV2Router: EXPIRED");
+
+        if (reentryTarget != address(0)) {
+            (reentrySucceeded, reentryReturnData) = reentryTarget.call(reentryData);
+            reentryTarget = address(0);
+        }
+
         amounts = getAmountsOut(amountIn, path);
         require(amounts[1] >= amountOutMin, "MockV2Router: INSUFFICIENT_OUTPUT_AMOUNT");
 
@@ -679,6 +698,45 @@ contract ArbitragePluginTest is Test {
         vm.prank(stranger);
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger));
         plugin.withdrawToken(address(usdc), stranger, profit);
+    }
+
+    /**
+     * @dev While a cycle is mid-flight the principal is only on loan from the vault, so a
+     *      withdrawal must be refused. Reached by having venue A re-enter the plugin during
+     *      leg 1, which is the only way a call can land inside the callback: `venueA` is an
+     *      immutable chosen by the owner at construction, so this exercises the trust boundary
+     *      rather than an unprivileged attack path.
+     */
+    function test_WithdrawToken_RevertsDuringACycle() public {
+        _setV2Price(PRICE_CHEAP);
+        _setV3Price(PRICE_RICH);
+        usdc.mint(address(venueA), V2_USDC_FLOAT);
+
+        // Arm venue A to try to pull the principal out of the plugin during leg 1. The router is
+        // NOT the owner, so this call would be rejected by `onlyOwner` on its own; routing the
+        // withdrawal through the test contract (the owner) via a tiny trampoline is what
+        // actually reaches the `CycleInProgress` guard.
+        venueA.setReentryHook(address(this), abi.encodeCall(this.tryWithdrawDuringCycle, ()));
+
+        plugin.startArbitrage(PRINCIPAL, true);
+
+        // The cycle itself completed, but the re-entrant withdrawal did not: the mock recorded
+        // the failure instead of bubbling it, so the cycle was unaffected.
+        assertFalse(venueA.reentrySucceeded(), "mid-cycle withdrawal must not succeed");
+        assertEq(
+            bytes4(venueA.reentryReturnData()),
+            ArbitragePlugin.CycleInProgress.selector,
+            "mid-cycle withdrawal must fail with CycleInProgress"
+        );
+
+        // And the principal was repaid, so the vault came out whole.
+        assertEq(usdc.balanceOf(address(vault)), VAULT_LIQUIDITY, "vault must end whole");
+    }
+
+    /// @dev Reached re-entrantly from the venue during a cycle. As the owner it clears `onlyOwner`,
+    ///      so the only thing that can stop the withdrawal is the `CycleInProgress` guard.
+    function tryWithdrawDuringCycle() external {
+        plugin.withdrawToken(address(usdc), address(this), PRINCIPAL);
     }
 
     // ==================== TEST 17 - VIEW QUOTE VS REALISED PROFIT ====================
