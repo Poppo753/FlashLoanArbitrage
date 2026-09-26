@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IPool} from "@aave/core-v3/contracts/interfaces/IPool.sol";
+import {IPool} from "../../lib/aave-v3-core/contracts/interfaces/IPool.sol";
 import {IFlashLoanSimpleReceiver} from "./interfaces/IAaveFlashLoanReceiver.sol";
 import {IUniswapV2Router} from "./interfaces/IUniswapV2Router.sol";
-import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {SafeERC20, IERC20} from "../../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuard} from "../../lib/openzeppelin-contracts/contracts/security/ReentrancyGuard.sol";
+import {Ownable} from "../../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
 import {SafeMathLib} from "./libraries/SafeMathLib.sol";
 
 contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "forge-std/Test.sol";
+import "../../lib/forge-std/src/Test.sol";
 import "../contracts/FlashArbExecutor.sol";
 import "../contracts/interfaces/IUniswapV2Router.sol";
 import "../helpers/Mocks.sol";
@@ -16,7 +16,7 @@ contract FlashArbExecutorTest is Test {
     MockUniswapRouter public router0;
     MockUniswapRouter public router1;
     address public owner;
-    address public attacker;
+    address public attackerAddr;
 
     uint256 constant AMOUNT = 10_000 * 1e18;
 

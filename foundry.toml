@@ -1,24 +1,19 @@
-[foundry]
-src = "contracts"
+[profile.foundry]
+src = ["contracts", "test", "helpers"]
 out = "out"
 libs = ["lib"]
 remappings = [
-    "@aave/core-v3/=lib/aave-core-v3/contracts/",
-    "@aave/contracts/=lib/aave-core-v3/contracts/",
-    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/"
+    "aave-v3-core/=lib/aave-v3-core/",
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "forge-std/=lib/forge-std/src/"
 ]
 
-[solc]
+[profile.solc]
 optimizer = true
 optimizer_runs = 200
 solc_version = "0.8.20"
 evm_version = "paris"
 
-[test]
+[profile.test]
 fuzz = { runs = 10000 }
 invariant = { runs = 1000, depth = 15 }
-
-[fmt]
-line_length = 120
-tab_width = 4
-bracket_spacing = true
