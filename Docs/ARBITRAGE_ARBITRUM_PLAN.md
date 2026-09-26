@@ -86,6 +86,11 @@
 - **Il bot resta TypeScript**: esiste già, è type-checkato, ha la logica di detection/quote. Rischiarlo in Python costerebbe tempo senza guadagno.
 - **Velocità**: l'esecuzione è UNA transazione atomica (frazione di secondo, subito sotto il limite di atomicità di EVM = il massimo possibile). Il bot off-chain serve solo a *trovare* l'opportunità: 250ms di blocco Arbitrum dominano qualsiasi differenza Python↔TS.
 
+### D13 — Lazy init per spezzare la dipendenza circolare tra servizio e plugin
+- Con D11 il servizio richiede `authorizedCaller = address(plugin)` **in costruzione**, ma il plugin ha bisogno di `address(service)` per sapere da chi ricevere il callback: circolare.
+- Soluzione: `ArbitragePlugin.initialize(address service)` — `onlyOwner`, una volta sola (`require(service == address(0), AlreadyInitialized)`), `require(newService != address(0), InvalidAddress())`, evento `Initialized`. Ordine deploy: plugin → servizio → `plugin.initialize(servizio)`.
+- Alternativa rifiutata: `setAuthorizedCaller` sul servizio (rende l'autorizzazione mutabile dopo il deploy, cioè una seconda porta d'ingresso da tenere chiusa — peggio per la sicurezza).
+
 ## B. Elenco file (cosa si copia / si crea / si rimuove)
 
 ### Copiati da TSC (adattati OZ v5 + semplificati)
