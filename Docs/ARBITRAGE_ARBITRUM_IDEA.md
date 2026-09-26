@@ -18,7 +18,7 @@ In sintesi:
 
 | Componente | Oggi (no) | Domani (si, preso da TSC) |
 |---|---|---|
-| Flash loan | Aave V3 (`IPool.flashLoan`, 7 arg, fee 0.05%) | **Balancer V2 Vault, 0% fee** — `FlashLoanService.sol` di TSC copiato quasi pari pari |
+| Flash loan | Aave V3 (`IPool.flashLoan`, 7 arg, **fee 0.5% nel mock test**, 0.05% reale) | **Balancer V2 Vault, 0% fee** — `FlashLoanService.sol` di TSC copiato quasi pari pari |
 | Swap venue | Router mock in test / solo V2-style | **V2 reale + V3 reale su Arbitrum**, logica swap adattata da TSC |
 | Test | Mock locali | **Fork Arbitrum** (Alchemy, blocco pinnato) con whale funding — pattern esatto di TSC |
 | Chain | Ethereum mainnet (Aave) | **Arbitrum One (42161)** — Balancer Vault `0xBA12…F2C8` presente, stessi indirizzi di TSC |
@@ -27,10 +27,10 @@ In sintesi:
 
 Dalla ricerca (3 agenti, 2026-09-26) risulta:
 
-1. **`contracts/services/FlashLoanService.sol` (425 righe)** — flash loan Balancer V2, 0% fee, doppio strato di sicurezza (Beacon check + trust-the-revert). Dipendenze di compile minime: 5 interfacce del progetto (`IBeacon`, `IFlashLoanCallback`, `ISimpleSwap`, `ITokenManagerForModules`, `balancer/IBalancerVault`) + OZ. **È già il pattern esatto che serve a noi**: chi prende in prestito è un "plugin" registrato → il nostro `FlashArbExecutor` diventa un plugin `IFlashLoanCallback`.
+1. **`contracts/services/FlashLoanService.sol` (425 righe)** — flash loan Balancer V2, 0% fee, doppio strato di sicurezza (Beacon check + trust-the-revert). Dipendenze di compile minime: 5 interfacce del progetto (`IBeacon`, `IFlashLoanCallback`, `ISimpleSwap`, `ITokenManagerForModules`, `balancer/IBalancerVault`) + OZ. **È già il pattern esatto che serve a noi**: chi chiede il prestito deve essere autorizzato → il nostro nuovo `ArbitragePlugin` riceve il prestito implementando `IFlashLoanCallback`. (Nella sua versione originale l'autorizzazione passa da un registro di nomi; noi la semplifichiamo — vedi piano D11.)
 2. **Swappare su Arbitrum** — TSC prova due ricette funzionanti in fork:
    - V3 diretto: `UniswapV3PluginDirect` chiama `exactInputSingle` sul router ufficiale `0xE592427A0AEce92De3Edee1F18E0157C05861564` (test `Withdraw.AutomaticSwap.fork.test.ts`);
-   - il nostro codice già parla `IUniswapV2Router02` → su Arbitrum esiste il **V2 ufficiale**: router `0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24`, factory `0xf1D7CC64Fb4452F05c498126312eBE29f30Fbcf9` (deploy ufficiale Uniswap).
+   - il nostro codice usa `IUniswapV2Router` (**minimal**, manca interfaccia completa) → **va creato `IUniswapV2Router02.sol`**; su Arbitrum esiste il **V2 ufficiale**: router `0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24`, factory `0xf1D7CC64Fb4452F05c498126312eBE29f30Fbcf9` (deploy ufficiale Uniswap).
 3. **Test su fork** — TSC: `FORK_ENABLED=true` + `ARBITRUM_RPC_URL` (endpoint **Alchemy** nel loro `.env`, autorizzato dall'utente), whale `0x489ee077994B6658eAfA855C308275EAd8097C4A` (GMX vault: WETH/USDC/WBTC/USDT/ARB), impersonation 4 step, `FORK_BLOCK_NUMBER` pinnato per determinismo, test che si autoskippano senza fork.
 4. **Sicurezza flash loan** — `FlashLoan.selfAttack.test.ts`: spoofing del callback Balancer → `NotBalancerVault`, callback fuori prestito → `NotInFlashLoan`, caller non registrato → `NotRegisteredPlugin`. Da portare come suite Foundry.
 

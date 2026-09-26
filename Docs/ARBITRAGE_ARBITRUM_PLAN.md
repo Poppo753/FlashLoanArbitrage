@@ -8,12 +8,12 @@
 
 ## A. Decisioni prese (con motivazione)
 
-### D1 — Flash loan: Balancer V2 via `FlashLoanService` copiato da TSC
+### D1 — Flash loan: Balancer V2 via `FlashLoanService` copiato e semplificato da TSC
 - **Si copia** `contracts/services/FlashLoanService.sol` (TSC) adattandolo a OZ v5 + solc 0.8.27. **Niente Aave.**
-- **Si copia anche il Beacon reale** (`contracts/Beacon.sol` + `interfaces/IBeacon.sol`): il FlashLoanService lo richiede per l'autorizzazione dei plugin. Copiare il Beacon (410 righe, collaudato) costa meno che riscrivere la logica di auth del servizio — e regala upgradability.
-- Il nostro contratto diventa **plugin registrato** (implementa `IFlashLoanCallback.onFlashLoanReceived`), esattamente come i plugin di TSC.
-- Fee 0% (contro 0.05% di Aave): il break-even dell'arb migliora.
-- **Alternative rifiutate:** mantenere Aave (utente: problemi noti); riscrivere FlashLoanService senza Beacon (rompe "copiare pari pari", rischio bug introdotti).
+- **NON si copia il Beacon** (vedi D11): l'autorizzazione diventa un singolo indirizzo in costruzione. Il FlashLoanService resta fedele nel meccanismo (verifica il caller, affida i token, callback, trust-the-revert), cambia solo *come* verifica.
+- Il nostro contratto diventa **il contraente autorizzato** (implementa `IFlashLoanCallback.onFlashLoanReceived`).
+- Fee 0% (contro 0.05% reale Aave, 0.5% nel nostro vecchio mock): il break-even dell'arb migliora.
+- **Alternative rifiutate:** mantenere Aave (utente: problemi noti); riscrivere il meccanismo di sicurezza da zero; copiare il Beacon per fedeltà letterale (aumenta il codice senza reale beneficio — l'autorizzazione a-names è pensata per un protocollo multi-modulo, non per un esecutore unico).
 
 ### D2 — Le due venue: Uniswap **V2 ufficiale** + Uniswap **V3 (0.05%)**, router configurabili
 - **Venue A — Uniswap V2 ufficiale su Arbitrum**: router `0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24`, factory `0xf1D7CC64Fb4452F05c498126312eBE29f30Fbcf9` (deploy ufficiale Uniswap, verificato 2026-09-26 su developers.uniswap.org). Interfaccia `IUniswapV2Router02` → **il nostro codice swap V2 già scritto e testato funziona quasi senza modifiche**.
@@ -45,7 +45,7 @@
 ### D6 — Test: Foundry + fork Arbitrum pinnato, suite locale mock conservata
 - **Nuova suite fork** in `test/fork/*.t.sol`, gate `vm.envOr("FORK_ENABLED", false)` → skip se non configurato (stessa filosofia di `this.skip()` di TSC).
 - `foundry.toml`: `[rpc_endpoints] arbitrum = "${ARBITRUM_RPC_URL}"`; comando tipo `forge test --fork-url arbitrum --fork-block-number <PIN>` (profilo/alias dedicato). **Blocco pinnato** per determinismo (TSC: `FORK_BLOCK_NUMBER=483105327` come riferimento; il valore esatto lo fissiamo alla prima esecuzione riuscita e lo documentiamo).
-- **Pattern di setup copiati da TSC:** *Pattern B* (MockBeacon/Beacon deployato dal test, nessun impersonamento del beacon live), whale funding a 4 step (`vm.deal` + `vm.startPrank(whale)` + `transfer` + `stopPrank`), test negativi di sicurezza.
+- **Pattern di setup copiati da TSC:** deploy inline nel test (niente impersonamento di beacon live), whale funding a 4 step (`vm.deal` + `vm.startPrank(whale)` + `transfer` + `stopPrank`), test negativi di sicurezza. Il "Pattern B" di TSC usava `MockBeacon`; con D11 non serve più alcun mock di registro: `new FlashLoanService(address(plugin))` e basta.
 - **Test di disallineamento forzato:** whale swapa sulla venue A (grande size) → prezzo si sposta → `startArbitrage` → assert profitto > 0 e Balancer ripagato.
 - **Suite mock locale attuale:** riscritta per `ArbitragePlugin` (mock Balancer/mock Vault già esistente in TSC: `MockFlashLoanService.sol` è un buon riferimento, ma costruiamo mock minimi nostri) così `forge test` senza fork resta veloce e verde.
 - **Test finali obbligatori (fase 7):** `forge build` (0 errori/0 warning), `forge lint` (0), `forge fmt --check`, suite mock completa, **suite fork completa su blocco pinnato**, `npx tsc --noEmit` bot.
@@ -72,31 +72,44 @@
 - `script/Deploy.s.sol` riscritto: deploy `Beacon` → `FlashLoanService(beacon)` → `ArbitragePlugin(beacon, …)` → `beacon.updateImplementation("ArbitragePlugin", …)` + `("FlashLoanService", …)`, parametri da env (`ARB_VENUE_A_ROUTER`, `ARB_VENUE_B_ROUTER`, `MIN_PROFIT_USDC`…).
 - Rete: Arbitrum (`--rpc-url arbitrum`). Il deploy **live non viene eseguito** in questa fase (solo script pronto + testato in fork).
 
+### D11 — Nessun Beacon: autorizzazione a singolo indirizzo (utente: "utilizzabile solo da me")
+- Il progetto serve **un solo esecutore**. Il registro name→address di TSC serve a un protocollo con molti moduli; qui è sovrapposizione.
+- `FlashLoanService` adattato: `address public immutable authorizedCaller` in costruzione; `if (msg.sender != authorizedCaller) revert NotAuthorizedCaller(msg.sender);` al posto di `_isRegisteredPlugin(beacon)`.
+- **Stessa sicurezza** (chi non è autorizzato non ottiene il prestito), 5 righe invece di ~40 + 3 file in più da copiare e mantenere.
+- **File risparmiati:** `Beacon.sol` (410 righe), `IBeacon.sol`, `MockBeacon.sol` + il `ISimpleSwap`/`ITokenManagerForModules` (servivano solo a `swap()`/`getExpectedOutput()` del servizio, che **non ci portiamo dietro**: gli swap li fa direttamente il plugin, i preventivi li prende dal quoter/router).
+- Il servizio copiato conserva: verifica del caller, `nonReentrant`, `_inFlashLoan`, doppio controllo nel callback (`NotBalancerVault` + `NotInFlashLoan`), `InsufficientRepayment` esplicito, `safeTransfer` ovunque.
+- **Alternative rifiutate:** copiare il Beacon per fedeltà (D1, già rifiutato — costo senza beneficio); lasciare il servizio com'è e "nascosto" dietro un proxy (complessità inutile).
+
+### D12 — Linguaggi: on-chain per forza in Solidity, off-chain resta TypeScript
+- **Il flash loan DEVE essere Solidity**: Balancer richiama il contraente nella stessa transazione (callback on-chain). Nessun Python/TS può sostituirlo.
+- **Gli swap devono essere Solidity** per la stessa ragione: devono essere atomici con il prestito, o il ciclo non è sicuro.
+- **Il bot resta TypeScript**: esiste già, è type-checkato, ha la logica di detection/quote. Rischiarlo in Python costerebbe tempo senza guadagno.
+- **Velocità**: l'esecuzione è UNA transazione atomica (frazione di secondo, subito sotto il limite di atomicità di EVM = il massimo possibile). Il bot off-chain serve solo a *trovare* l'opportunità: 250ms di blocco Arbitrum dominano qualsiasi differenza Python↔TS.
+
 ## B. Elenco file (cosa si copia / si crea / si rimuove)
 
-### Copiati da TSC (adattati OZ v5)
+### Copiati da TSC (adattati OZ v5 + semplificati)
 | File TSC | Destinazione nostro | Note |
 |---|---|---|
-| `contracts/services/FlashLoanService.sol` | `contracts/services/FlashLoanService.sol` | ≈ pari pari; OZ import |
-| `contracts/Beacon.sol` | `contracts/Beacon.sol` | OZ v5 `Ownable(msg.sender)` |
-| `contracts/interfaces/IBeacon.sol` | `contracts/interfaces/IBeacon.sol` | verbatim |
+| `contracts/services/FlashLoanService.sol` | `contracts/services/FlashLoanService.sol` | meccanismo fedele; auth semplificata (D11); import OZ v5; **via** `swap()`/`getExpectedOutput()`/TokenManager/SimpleSwap (non servono → D11) |
 | `contracts/interfaces/IFlashLoanCallback.sol` | idem | verbatim |
-| `contracts/interfaces/ISimpleSwap.sol` | idem | serve a FlashLoanService |
-| `contracts/interfaces/ITokenManagerForModules.sol` | idem | serve a FlashLoanService (fallback price) |
 | `contracts/interfaces/balancer/IBalancerVault.sol` | idem | incl. `IFlashLoanRecipient` |
-| `contracts/mocks/MockBeacon.sol` | idem | per test |
-| (riferimento) `contracts/plugins/UniswapV3PluginDirect.sol` | non copiato: se ne estrae il corpo swap in `ArbitragePlugin` | |
+| (riferimento) `contracts/plugins/UniswapV3PluginDirect.sol` | non copiato: si estrae solo il corpo di `exactInputSingle` | |
+
+### Non copiati (confermato dalla verifica 2026-09-26)
+- `contracts/Beacon.sol` — **ownership custom, non OZ Ownable** (righe 17, 79-82, 98-100): irrilevante dopo D11, ma il dettaglio evita un errore in fase di copia.
+- `contracts/interfaces/IBeacon.sol`, `ISimpleSwap.sol`, `ITokenManagerForModules.sol`, `mocks/MockBeacon.sol` — non necessari dopo D11.
 
 ### Nuovi (nostri)
 - `contracts/ArbitragePlugin.sol` — cuore (callback + arb + primitive D5).
-- `contracts/interfaces/IUniswapV2Router02.sol` — già presente/da verificare nel repo.
+- `contracts/interfaces/IUniswapV2Router02.sol` — **NON esiste oggi nel repo** (verifica 2026-09-26): esiste solo `IUniswapV2Router.sol` minimal. Va creato con l'interfaccia completa.
 - `contracts/interfaces/IUniswapV3Router.sol` — copiato da TSC (struct `ExactInputSingleParams`).
 - `script/Deploy.s.sol` — riscritto (D10).
 - `test/fork/ForkSetup.t.sol`, `test/fork/FlashLoanBalancer.t.sol`, `test/fork/Arbitrage.e2e.t.sol`, `test/fork/Security.t.sol`.
-- `test/ArbitragePlugin.t.sol` (+ eventuali mock dedicati: mock vault/mock router come da suite locale).
+- `test/ArbitragePlugin.t.sol` + mock dedicati (mock vault Balancer locale per test senza fork).
 
 ### Rimossi da questo branch (storico su Dev/git)
-- `contracts/FlashArbExecutor.sol`, `contracts/interfaces/IAavePool*.sol` (o comunque tutto il perimetro Aave), `test/FlashArbExecutor.t.sol`, mock Aave (`MockAavePool`…), riferimenti Aave in `.env.example`/README/Deploy (rimpiazzati da Balancer/Arbitrum).
+- `contracts/FlashArbExecutor.sol` (Aave), interfacce Aave, `test/FlashArbExecutor.t.sol`, mock Aave, riferimenti Aave in `.env.example`/README/Deploy.
 
 ## C. Rischî e mitigazioni
 
@@ -107,7 +120,8 @@
 | Copia con errori OZ v5 | Ogni file copiato: build immediata + test dedicato |
 | Disallineamento forzato non sufficiente a coprire fee+slippage | Calcolo size di trade nel test per generare spread > fee V2+V3+buffer; assert con soglia reale |
 | Ciclo che chiude sull'asset sbagliato (lezione C1) | Test esplicito `WrongAsset` + assert ripagamento Balancer |
-| Beacon dimenticato nel deploy | Test fork verifica `isAuthorizedPlugin(plugin)==true` prima di tutto (Pattern B) |
+| `authorizedCaller` sbagliato in deploy → nessuno può fare arb | Il test di setup asserisce `service.authorizedCaller() == address(plugin)` **prima** di ogni fork test; `NotAuthorizedCaller` coperto da test negativo |
+| Preventivo sbagliato → `minAmountOut` troppo alto → revert inutili | Prezzo minimo derivato da `getAmountsOut` (V2) / `quoteExactInputSingle` (V3) sullo **stesso** blocco, mai da prezzo cached |
 
 ## D. Criteri di "funziona al 100%" (gate di chiusura)
 
