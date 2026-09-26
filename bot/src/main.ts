@@ -62,9 +62,14 @@ async function startMonitoring(): Promise<void> {
             netProfitUsd: profitResult.netProfitUsd,
           });
 
+          const loanAsset = opp.tokens[0];
+          // TODO(B6): encode real calldata against the deployed FlashArbExecutor
+          // (executeOperation(assets, amounts, premiums, initiator, params)) and
+          // put its address in config before mainnet use. assets/amounts must
+          // stay the same length; this is a single-asset flash loan placeholder.
           const simResult = await simulator.simulateFlashLoan(
             config.chains[0].aaveLendingPool,
-            opp.tokens.slice(0, -1),
+            [loanAsset],
             [loanSize],
             undefined,
             opp.tokens,
@@ -74,7 +79,7 @@ async function startMonitoring(): Promise<void> {
           if (simResult.success && simResult.netProfitEstimate?.isProfitable) {
             const result = await executionEngine.execute(
               config.chains[0].aaveLendingPool,
-              "0x",
+              "0x", // TODO(B6): replace with FlashArbExecutor calldata (see above)
               loanSize,
               opp.tokens,
               reserves
