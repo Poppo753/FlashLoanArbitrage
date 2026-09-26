@@ -19,7 +19,9 @@ export interface BundleStatus {
 }
 
 const FLASHBOTS_RELAY_URL =
-  process.env.FLASHBOTS_RELAY_URL || "https://relay.flashbots.net";
+  process.env.FLASHBOTS_URL ||
+  process.env.FLASHBOTS_RELAY_URL ||
+  "https://relay.flashbots.net";
 const FLASHBOTS_PROTECT_URL =
   process.env.FLASHBOTS_PROTECT_URL || "https://flashbots.net/flashbots-protected";
 
