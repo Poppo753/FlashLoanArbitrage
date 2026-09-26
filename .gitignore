@@ -2,6 +2,8 @@
 .env.local
 artifacts/
 cache/
+out/
+lib/
 node_modules/
 *.log
 *.sqlite
@@ -11,3 +13,4 @@ coverage/
 broadcast/
 deployments/
 *.sol.js
+foundry.lock

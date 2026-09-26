@@ -5,7 +5,7 @@ import {IPool} from "aave-v3-core/contracts/interfaces/IPool.sol";
 import {IFlashLoanSimpleReceiver} from "./interfaces/IAaveFlashLoanReceiver.sol";
 import {IUniswapV2Router} from "./interfaces/IUniswapV2Router.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {SafeMathLib} from "./libraries/SafeMathLib.sol";
 
@@ -77,7 +77,7 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
 
         uint256 intermediateBalance = IERC20(borrowAsset).balanceOf(address(this));
 
-        IERC20(borrowAsset).safeApprove(address(router0), intermediateBalance);
+        IERC20(borrowAsset).forceApprove(address(router0), intermediateBalance);
         uint256 returned0 = router0.swapExactTokensForTokens(
             intermediateBalance,
             0,
@@ -88,7 +88,7 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
 
         uint256 intermediateTokenBalance = IERC20(sellToken).balanceOf(address(this));
 
-        IERC20(sellToken).safeApprove(address(router1), intermediateTokenBalance);
+        IERC20(sellToken).forceApprove(address(router1), intermediateTokenBalance);
         uint256 returned1 = router1.swapExactTokensForTokens(
             intermediateTokenBalance,
             minAmountOut,
@@ -106,7 +106,7 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
             revert InsufficientProfit();
         }
 
-        IERC20(borrowAsset).safeApprove(address(POOL), totalCost);
+        IERC20(borrowAsset).forceApprove(address(POOL), totalCost);
 
         emit ArbitrageCompleted(borrowAsset, profit.mul(10000).div(totalCost), profit);
 

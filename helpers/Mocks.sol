@@ -219,7 +219,7 @@ contract MockFlashLoanReceiver is IFlashLoanSimpleReceiver {
         (address sellToken, address buyToken, uint256 minAmountOut) = _decodeParams(params);
 
         uint256 intermediateBalance = IERC20(borrowAsset).balanceOf(address(this));
-        IERC20(borrowAsset).safeApprove(executor, intermediateBalance);
+        IERC20(borrowAsset).forceApprove(executor, intermediateBalance);
 
         uint256 returned0 = IUniswapV2Router(payable(executor)).swapExactTokensForTokens(
             intermediateBalance,
@@ -230,7 +230,7 @@ contract MockFlashLoanReceiver is IFlashLoanSimpleReceiver {
         )[1];
 
         uint256 intermediateTokenBalance = IERC20(sellToken).balanceOf(address(this));
-        IERC20(sellToken).safeApprove(executor, intermediateTokenBalance);
+        IERC20(sellToken).forceApprove(executor, intermediateTokenBalance);
 
         uint256 returned1 = IUniswapV2Router(payable(executor)).swapExactTokensForTokens(
             intermediateTokenBalance,
@@ -243,7 +243,7 @@ contract MockFlashLoanReceiver is IFlashLoanSimpleReceiver {
         uint256 totalCost = borrowAmount + premium;
         lastProfit = returned1 - totalCost;
 
-        IERC20(borrowAsset).safeApprove(pool, totalCost);
+        IERC20(borrowAsset).forceApprove(pool, totalCost);
         return true;
     }
 
