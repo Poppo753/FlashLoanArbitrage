@@ -1,4 +1,4 @@
-import { PoolMonitor, ReserveData } from "./poolMonitor";
+import { poolMonitor, PoolMonitor, ReserveData } from "./poolMonitor";
 import { config } from "./config";
 import { logger } from "./logger";
 
@@ -303,4 +303,4 @@ export class OpportunityDetector {
   }
 }
 
-export const opportunityDetector = new OpportunityDetector(new PoolMonitor());
+export const opportunityDetector = new OpportunityDetector(poolMonitor);
