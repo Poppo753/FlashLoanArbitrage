@@ -1,0 +1,13 @@
+.env
+.env.local
+artifacts/
+cache/
+node_modules/
+*.log
+*.sqlite
+*.db
+.DS_Store
+coverage/
+broadcast/
+deployments/
+*.sol.js
