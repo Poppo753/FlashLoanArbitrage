@@ -1,6 +1,7 @@
 import { poolMonitor, PoolMonitor, ReserveData, pairKey, orientReserve } from "./poolMonitor";
 import { config } from "./config";
 import { logger } from "./logger";
+import { setBaseFeeWei } from "./profitCalculator";
 
 export interface ArbitragePath {
   tokens: string[];
@@ -291,6 +292,15 @@ export class OpportunityDetector {
   }
 
   async detectAllOpportunities(tokens: string[]): Promise<ArbitragePath[]> {
+    try {
+      const baseFeeWei = await this.poolMonitor.getBaseFeeWei();
+      if (baseFeeWei !== null) {
+        setBaseFeeWei(baseFeeWei);
+      }
+    } catch (err: unknown) {
+      this.logger.debug("Base fee refresh failed", { error: String(err) });
+    }
+
     const opportunities: ArbitragePath[] = [];
 
     for (let i = 0; i < tokens.length; i++) {

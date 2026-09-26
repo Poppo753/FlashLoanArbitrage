@@ -14,6 +14,16 @@ export interface ProfitResult {
   effectiveAmountOut: bigint;
 }
 
+const FALLBACK_BASE_FEE_WEI = BigInt(10_000_000_000);
+
+let sharedBaseFeeWei: bigint = FALLBACK_BASE_FEE_WEI;
+
+export function setBaseFeeWei(baseFeeWei: bigint): void {
+  if (baseFeeWei > BigInt(0)) {
+    sharedBaseFeeWei = baseFeeWei;
+  }
+}
+
 export class ProfitCalculator {
   private readonly aavePremiumBps: number;
 
@@ -49,7 +59,15 @@ export class ProfitCalculator {
       priceImpactTotal += Math.abs(beforePrice - afterPrice) / beforePrice;
     }
 
-    const gasCost = this.estimateGasCost(path.length);
+    const gasPriceWei = this.effectiveGasPriceWei();
+    const gasCost = this.estimateGasCost(path.length, gasPriceWei);
+    const gasPriceExceeded = !this.isGasPriceWithinLimit(gasPriceWei);
+    if (gasPriceExceeded) {
+      logger.warn("Effective gas price above thresholds.maxGasPriceGwei; marking not profitable", {
+        gasPriceGwei: Number(gasPriceWei) / 1e9,
+        maxGasPriceGwei: config.thresholds.maxGasPriceGwei,
+      });
+    }
     const grossProfit = currentAmount - amountIn;
     const netProfit = grossProfit - aaveFee - gasCost;
 
@@ -64,7 +82,7 @@ export class ProfitCalculator {
       netProfitWei: netProfit,
       netProfitUsd,
       profitMargin,
-      isProfitable: netProfit > BigInt(0),
+      isProfitable: netProfit > BigInt(0) && !gasPriceExceeded,
       estimatedPriceImpact: priceImpactTotal,
       effectiveAmountOut: currentAmount,
     };
@@ -73,6 +91,8 @@ export class ProfitCalculator {
       loanSize: amountIn.toString(),
       grossProfit: grossProfit.toString(),
       netProfit: netProfit.toString(),
+      gasCost: gasCost.toString(),
+      gasPriceGwei: Number(gasPriceWei) / 1e9,
       isProfitable: result.isProfitable,
     });
 
@@ -101,11 +121,24 @@ export class ProfitCalculator {
     return orientReserve(stored, tokenIn, tokenOut) ?? undefined;
   }
 
-  private estimateGasCost(pathLength: number): bigint {
+  private effectiveGasPriceWei(): bigint {
+    const baseFeeWei =
+      sharedBaseFeeWei > BigInt(0) ? sharedBaseFeeWei : FALLBACK_BASE_FEE_WEI;
+    const multiplierBps = BigInt(Math.round(config.baseFeeMultiplier * 10000));
+    const priorityFeeWei = BigInt(config.priorityFeeWei);
+    return (baseFeeWei * multiplierBps) / BigInt(10000) + priorityFeeWei;
+  }
+
+  private isGasPriceWithinLimit(gasPriceWei: bigint): boolean {
+    const gasPriceGwei = Number(gasPriceWei) / 1e9;
+    return gasPriceGwei <= config.thresholds.maxGasPriceGwei;
+  }
+
+  private estimateGasCost(pathLength: number, gasPriceWei: bigint): bigint {
     const baseGas = BigInt(21000) * BigInt(pathLength);
     const flashLoanOverhead = BigInt(150000);
     const totalGas = baseGas + flashLoanOverhead;
-    return totalGas * BigInt(config.priorityFeeWei);
+    return totalGas * gasPriceWei;
   }
 
   private weiToUsd(
