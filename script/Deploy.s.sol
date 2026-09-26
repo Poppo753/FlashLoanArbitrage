@@ -14,13 +14,7 @@ contract Deploy is Script {
         uint256 minProfitBps = 50;
 
         vm.startBroadcast();
-        FlashArbExecutor executor = new FlashArbExecutor(
-            poolAddress,
-            owner,
-            minProfitBps,
-            router0,
-            router1
-        );
+        FlashArbExecutor executor = new FlashArbExecutor(poolAddress, owner, minProfitBps, router0, router1);
         vm.stopBroadcast();
 
         console.log("FlashArbExecutor deployed to:", address(executor));

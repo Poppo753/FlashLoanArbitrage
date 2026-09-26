@@ -50,18 +50,17 @@ contract FlashArbExecutorTest is Test {
         router0.setMultiplier(150);
         router1.setMultiplier(150);
 
-        executor = new FlashArbExecutor(
-            address(pool),
-            owner,
-            Constants.MIN_PROFIT_BPS,
-            address(router0),
-            address(router1)
-        );
+        executor =
+            new FlashArbExecutor(address(pool), owner, Constants.MIN_PROFIT_BPS, address(router0), address(router1));
     }
 
     receive() external payable {}
 
-    function _buildParams(address sellToken, address buyToken, uint256 minAmountOut) internal pure returns (bytes memory) {
+    function _buildParams(address sellToken, address buyToken, uint256 minAmountOut)
+        internal
+        pure
+        returns (bytes memory)
+    {
         return abi.encode(sellToken, buyToken, minAmountOut);
     }
 
@@ -112,23 +111,13 @@ contract FlashArbExecutorTest is Test {
 
     function test_OnlyPool_Caller() public {
         vm.expectRevert(OnlyPoolCaller.selector);
-        executor.executeOperation(
-            new address[](1),
-            new uint256[](1),
-            new uint256[](1),
-            address(this),
-            bytes("")
-        );
+        executor.executeOperation(new address[](1), new uint256[](1), new uint256[](1), address(this), bytes(""));
     }
 
     function test_OnlyOwner_Caller() public {
         vm.prank(attackerAddr);
         vm.expectRevert();
-        executor.executeArbitrage(
-            address(tokenA),
-            AMOUNT,
-            _buildParams(address(tokenB), address(tokenC), 0)
-        );
+        executor.executeArbitrage(address(tokenA), AMOUNT, _buildParams(address(tokenB), address(tokenC), 0));
     }
 
     function test_ReentrancyProtection() public {
@@ -147,14 +136,8 @@ contract FlashArbExecutorTest is Test {
 
         bytes memory params = _buildParams(address(tokenB), address(tokenC), 0);
 
-        ReentrancyAttacker attacker = new ReentrancyAttacker(
-            address(executor),
-            address(pool),
-            assets,
-            amounts,
-            premiums,
-            params
-        );
+        ReentrancyAttacker attacker =
+            new ReentrancyAttacker(address(executor), address(pool), assets, amounts, premiums, params);
 
         vm.expectRevert();
         attacker.attack();
@@ -199,11 +182,7 @@ contract FlashArbExecutorTest is Test {
         uint256 beforePoolTokenBalance = tokenA.balanceOf(address(pool));
 
         vm.prank(owner);
-        executor.executeArbitrage(
-            address(tokenA),
-            AMOUNT,
-            _buildParams(address(tokenB), address(tokenA), 0)
-        );
+        executor.executeArbitrage(address(tokenA), AMOUNT, _buildParams(address(tokenB), address(tokenA), 0));
 
         uint256 afterPoolTokenBalance = tokenA.balanceOf(address(pool));
         assertGt(afterPoolTokenBalance, beforePoolTokenBalance);
@@ -247,11 +226,7 @@ contract FlashArbExecutorTest is Test {
         pool.deposit(address(tokenA), AMOUNT);
 
         vm.prank(owner);
-        executor.executeArbitrage(
-            address(tokenA),
-            AMOUNT,
-            _buildParams(address(tokenB), address(tokenA), 0)
-        );
+        executor.executeArbitrage(address(tokenA), AMOUNT, _buildParams(address(tokenB), address(tokenA), 0));
 
         assertGt(tokenA.balanceOf(address(executor)), 0);
     }

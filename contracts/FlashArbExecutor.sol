@@ -42,11 +42,7 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
         router1 = IUniswapV2Router(router1Address);
     }
 
-    function executeArbitrage(
-        address borrowAsset,
-        uint256 amount,
-        bytes calldata params
-    ) external onlyOwner {
+    function executeArbitrage(address borrowAsset, uint256 amount, bytes calldata params) external onlyOwner {
         emit ArbitrageStarted(borrowAsset, amount, keccak256(params));
 
         address[] memory assets = new address[](1);
@@ -79,22 +75,14 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
 
         IERC20(borrowAsset).forceApprove(address(router0), intermediateBalance);
         uint256 returned0 = router0.swapExactTokensForTokens(
-            intermediateBalance,
-            0,
-            _getPath(borrowAsset, sellToken),
-            address(this),
-            block.timestamp
+            intermediateBalance, 0, _getPath(borrowAsset, sellToken), address(this), block.timestamp
         )[1];
 
         uint256 intermediateTokenBalance = IERC20(sellToken).balanceOf(address(this));
 
         IERC20(sellToken).forceApprove(address(router1), intermediateTokenBalance);
         uint256 returned1 = router1.swapExactTokensForTokens(
-            intermediateTokenBalance,
-            minAmountOut,
-            _getPath(sellToken, buyToken),
-            address(this),
-            block.timestamp
+            intermediateTokenBalance, minAmountOut, _getPath(sellToken, buyToken), address(this), block.timestamp
         )[1];
 
         uint256 totalCost = borrowAmount.add(premium);
@@ -131,7 +119,8 @@ contract FlashArbExecutor is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable 
     }
 
     function _decodeParams(bytes calldata params)
-        internal pure
+        internal
+        pure
         returns (address sellToken, address buyToken, uint256 minAmountOut)
     {
         require(params.length == 96, "Invalid params length");
