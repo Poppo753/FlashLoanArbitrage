@@ -22,7 +22,7 @@ async function initializeBot(): Promise<void> {
 
   try {
     const primaryChain = config.chains[0];
-    await poolMonitor.initialize(primaryChain.rpcUrl, primaryChain.chainId);
+    await poolMonitor.initialize(primaryChain.wsRpcUrl || primaryChain.rpcUrl, primaryChain.chainId);
     await poolMonitor.start();
     info("PoolMonitor initialized", { chainId: primaryChain.chainId });
   } catch (err) {

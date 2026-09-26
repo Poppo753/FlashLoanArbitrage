@@ -6,6 +6,7 @@ dotenv.config();
 export interface ChainConfig {
   name: string;
   rpcUrl: string;
+  wsRpcUrl: string;
   chainId: number;
   wethAddress: string;
   uniswapV2Router: string;
@@ -42,6 +43,7 @@ function loadChain(envPrefix: string): ChainConfig {
   return {
     name: process.env[`${envPrefix}_NAME`] || "Unknown",
     rpcUrl: process.env[`${envPrefix}_RPC_URL`] || "",
+    wsRpcUrl: process.env[`${envPrefix}_WS_RPC_URL`] || "",
     chainId: parseInt(process.env[`${envPrefix}_CHAIN_ID`] || "1", 10),
     wethAddress: process.env[`${envPrefix}_WETH_ADDRESS`] || "",
     uniswapV2Router: process.env[`${envPrefix}_UNISWAP_V2_ROUTER`] || "",
@@ -89,6 +91,10 @@ export const config = loadConfig();
 if (config.chains.some((c) => !c.rpcUrl || !c.wethAddress)) {
   logger.error("Missing required chain configuration in environment");
   process.exit(1);
+}
+
+if (config.chains.some((c) => !c.wsRpcUrl)) {
+  logger.warn("Missing *_WS_RPC_URL for at least one chain; WebSocket monitoring will fail until it is set");
 }
 
 export function getChainById(chainId: number): ChainConfig | undefined {

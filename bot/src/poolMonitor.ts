@@ -36,9 +36,14 @@ export class PoolMonitor {
     this.logger = logger;
   }
 
-  async initialize(chainRpcUrl: string, chainId: number): Promise<void> {
+  async initialize(chainWsUrl: string, chainId: number): Promise<void> {
     try {
-      this.provider = new WebSocketProvider(chainRpcUrl, chainId, {
+      if (!/^wss?:\/\//.test(chainWsUrl)) {
+        throw new Error(
+          `PoolMonitor requires a ws:// or wss:// endpoint, got "${chainWsUrl}". Set *_WS_RPC_URL in bot/.env.`
+        );
+      }
+      this.provider = new WebSocketProvider(chainWsUrl, chainId, {
         batchMaxCount: 100,
         staticNetwork: true,
       } as any);
@@ -53,7 +58,7 @@ export class PoolMonitor {
         this.handleDisconnect();
       });
 
-      this.logger.info("PoolMonitor initialized", { chainId, provider: chainRpcUrl });
+      this.logger.info("PoolMonitor initialized", { chainId, provider: chainWsUrl });
     } catch (err: unknown) {
       this.logger.error("Failed to initialize PoolMonitor", { error: String(err) });
       throw err;
@@ -66,7 +71,7 @@ export class PoolMonitor {
     this.reconnectTimer = setTimeout(async () => {
       try {
         await this.initialize(
-          config.chains[0].rpcUrl,
+          config.chains[0].wsRpcUrl || config.chains[0].rpcUrl,
           config.chains[0].chainId
         );
         await this.reSubscribeAll();

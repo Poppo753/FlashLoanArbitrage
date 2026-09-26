@@ -62,6 +62,7 @@ export class MEVMonitor {
 
       const wsUrl =
         process.env.WS_RPC_URL ||
+        config.chains[0].wsRpcUrl ||
         config.chains[0].rpcUrl.replace("https://", "wss://").replace("http://", "ws://");
 
       try {
